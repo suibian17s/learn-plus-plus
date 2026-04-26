@@ -1,0 +1,226 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Card, Form, Input, Select, Button, Switch, Space, Divider, message, Popconfirm, Tag, Alert, Typography } from 'antd'
+import { FolderOpenOutlined, LogoutOutlined, KeyOutlined, RobotOutlined } from '@ant-design/icons'
+import { useAuthStore } from '../store/auth'
+import { AI_PROVIDER_PRESETS, getAiProviderPreset } from '../../../shared/aiProviders'
+
+const { Text } = Typography
+
+export default function SettingsPage() {
+  const navigate = useNavigate()
+  const { reset } = useAuthStore()
+  const [form] = Form.useForm()
+  const [settings, setSettings] = useState<any>({})
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const selectedProvider = Form.useWatch('aiProvider', form) || settings.aiProvider || 'anthropic'
+  const providerPreset = getAiProviderPreset(selectedProvider)
+  const modelOptions = providerPreset.models
+
+  async function refreshProviderKeyState(provider: string) {
+    const hasKey = await window.learn.settings.hasApiKey(provider)
+    setSettings((s: any) => ({ ...s, hasApiKey: hasKey }))
+  }
+
+  useEffect(() => {
+    window.learn.settings.getAll().then((loaded) => {
+      setSettings(loaded)
+      form.setFieldsValue(loaded)
+    })
+  }, [form])
+
+  async function handleSave(values: any) {
+    setLoading(true)
+    try {
+      const updated = await window.learn.settings.set(values)
+      setSettings((s: any) => ({ ...s, ...updated }))
+      await refreshProviderKeyState(values.aiProvider || selectedProvider)
+      message.success('设置已保存')
+    } catch {
+      message.error('保存失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSelectDownloadDir() {
+    const dir = await window.learn.files.selectDirectory()
+    if (dir) {
+      await window.learn.settings.set({ downloadDir: dir })
+      setSettings((s: any) => ({ ...s, downloadDir: dir }))
+      message.success(`下载目录已改为: ${dir}`)
+    }
+  }
+
+  async function handleSetApiKey() {
+    if (!apiKeyInput.trim()) return
+    await window.learn.settings.setApiKey(apiKeyInput, selectedProvider)
+    setApiKeyInput('')
+    setSettings((s: any) => ({ ...s, hasApiKey: true }))
+    message.success(`${providerPreset.label} API Key 已加密保存`)
+  }
+
+  async function handleProviderChange(provider: string) {
+    const preset = getAiProviderPreset(provider)
+    form.setFieldsValue({
+      aiProvider: provider,
+      aiModel: preset.defaultModel,
+      aiBaseUrl: provider === 'custom' ? settings.aiBaseUrl || '' : '',
+      aiApiFormat: preset.apiFormat,
+    })
+    await refreshProviderKeyState(provider)
+  }
+
+  async function handleLogout() {
+    await window.learn.auth.logout()
+    reset()
+    navigate('/login')
+  }
+
+  async function handleResetRisk() {
+    await window.learn.settings.set({ aiAutoCompleteAcknowledged: false })
+    message.success('甘蔗 tutor 承诺书已重置')
+  }
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>设置</h2>
+
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSave}
+        initialValues={settings}
+        style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+      >
+        <Card title="系统设置" size="small">
+          <Form.Item name="launchAtStartup" label="开机自启动" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <div style={{ color: '#888', fontSize: 13 }}>
+            开机自启动会默认在后台运行，可从 Windows 右下角托盘图标打开或退出。
+          </div>
+        </Card>
+
+        <Card title="下载设置" size="small">
+          <Form.Item label="课件与附件下载目录" style={{ marginBottom: 8 }}>
+            <Space>
+              <span style={{ color: '#666', fontSize: 13 }}>{settings.downloadDir || '(默认)'}</span>
+              <Button icon={<FolderOpenOutlined />} onClick={handleSelectDownloadDir} size="small">
+                更改目录
+              </Button>
+            </Space>
+          </Form.Item>
+        </Card>
+
+        <Card
+          title={<Space><RobotOutlined /> 甘蔗 tutor 配置</Space>}
+          size="small"
+        >
+          <Alert
+            type="success"
+            showIcon
+            message="甘蔗 tutor 是全栈式 AI 辅助学习助手"
+            description="每个服务商单独保存 API Key。预设服务通常只需选择模型并填写 Key，自定义接口才需要填写 Endpoint。"
+            style={{ marginBottom: 16 }}
+          />
+
+          <Form.Item name="aiProvider" label="模型服务">
+            <Select
+              onChange={handleProviderChange}
+              options={AI_PROVIDER_PRESETS.map((preset) => ({
+                value: preset.id,
+                label: preset.label,
+              }))}
+            />
+          </Form.Item>
+
+          <Form.Item name="aiModel" label="模型">
+            {selectedProvider === 'custom' ? (
+              <Input placeholder="输入模型名，例如 gpt-4o-mini / claude-sonnet-4-6" />
+            ) : (
+              <Select
+                showSearch
+                placeholder="选择模型"
+                options={modelOptions}
+              />
+            )}
+          </Form.Item>
+
+          {selectedProvider === 'custom' ? (
+            <>
+              <Form.Item name="aiApiFormat" label="接口格式">
+                <Select
+                  options={[
+                    { value: 'openai', label: 'OpenAI 兼容 /v1/chat/completions' },
+                    { value: 'anthropic', label: 'Anthropic /v1/messages' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="aiBaseUrl" label="自定义 Endpoint">
+                <Input placeholder="https://api.example.com/v1 或完整 chat/completions 地址" />
+              </Form.Item>
+            </>
+          ) : (
+            <div style={{ marginBottom: 16, color: '#666', fontSize: 13 }}>
+              <div>接口格式：{providerPreset.apiFormat === 'anthropic' ? 'Anthropic Messages' : 'OpenAI 兼容'}</div>
+              <div style={{ wordBreak: 'break-all' }}>Endpoint：{providerPreset.endpoint}</div>
+            </div>
+          )}
+
+          {providerPreset.note && (
+            <Alert type="info" showIcon message={providerPreset.note} style={{ marginBottom: 16 }} />
+          )}
+
+          <Form.Item label={`${providerPreset.label} API Key`}>
+            <Space wrap>
+              <Input.Password
+                placeholder={settings.hasApiKey ? '已配置，输入新 Key 可替换' : '输入 API Key'}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                style={{ width: 320 }}
+              />
+              <Button icon={<KeyOutlined />} onClick={handleSetApiKey}>保存 Key</Button>
+              {settings.hasApiKey ? (
+                <Tag color="green">当前服务已保存 Key</Tag>
+              ) : (
+                <Text type="secondary">当前服务未保存 Key</Text>
+              )}
+            </Space>
+          </Form.Item>
+        </Card>
+
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={loading}>
+            保存设置
+          </Button>
+        </Form.Item>
+      </Form>
+
+      <Divider />
+
+      <Card title="风险操作" size="small">
+        <Space direction="vertical" size={12}>
+          <Popconfirm
+            title="确定要退出登录吗？下次需要重新登录。"
+            onConfirm={handleLogout}
+            okText="确定"
+            cancelText="取消"
+          >
+            <Button danger icon={<LogoutOutlined />}>退出登录</Button>
+          </Popconfirm>
+
+          <Popconfirm
+            title="重置后，下次使用甘蔗 tutor 自动完成作业功能时需要重新确认学术诚信承诺书。"
+            onConfirm={handleResetRisk}
+            okText="确定"
+            cancelText="取消"
+          >
+            <Button>重置甘蔗 tutor 承诺书</Button>
+          </Popconfirm>
+        </Space>
+      </Card>
+    </div>
+  )
+}

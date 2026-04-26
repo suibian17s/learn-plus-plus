@@ -1,0 +1,29 @@
+appId: cn.tsinghua.learnpp
+productName: learn++
+directories:
+  output: dist-installer
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - LICENSE
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: learn++
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+asar: true

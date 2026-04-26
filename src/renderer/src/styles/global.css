@@ -1,0 +1,56 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #FAFAFB;
+  color: #1a1a2e;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bbb;
+}
+
+.ant-layout {
+  background: #FAFAFB;
+}
+
+.ant-layout-sider {
+  background: #FAFAFB !important;
+}
+
+/* Allow course name text to wrap and menu items to grow in height */
+.sidebar-course-menu .ant-menu-item {
+  height: auto !important;
+  line-height: 1.4 !important;
+  padding: 10px 16px !important;
+  margin: 2px 8px !important;
+  border-radius: 6px !important;
+}
+
+.sidebar-course-menu .ant-menu-title-content {
+  white-space: normal !important;
+  overflow: visible !important;
+}
