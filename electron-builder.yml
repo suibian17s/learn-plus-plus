@@ -1,4 +1,4 @@
-appId: cn.tsinghua.learnpp
+appId: app.learnpp.desktop
 productName: learn++
 directories:
   output: dist-installer
@@ -10,6 +10,8 @@ files:
 extraResources:
   - from: resources/icon.png
     to: icon.png
+  - from: resources/fonts
+    to: fonts
 win:
   target:
     - target: nsis

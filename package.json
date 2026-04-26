@@ -1,7 +1,7 @@
 {
   "name": "learn-plus-plus",
   "version": "1.1.0",
-  "description": "清华网络学堂桌面客户端 — 公告、课件、作业 + AI 辅助学习",
+  "description": "面向清华网络学堂的第三方桌面客户端 — 公告、课件、作业 + AI 辅助学习",
   "license": "MIT",
   "author": "learn++ contributors",
   "main": "./out/main/index.js",

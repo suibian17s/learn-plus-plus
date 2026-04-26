@@ -30,7 +30,7 @@ export default function AboutPage() {
           <div>
             <Title level={2} style={{ margin: 0, color: '#660874' }}>learn++</Title>
             <Paragraph style={{ margin: '8px 0 0', color: '#666', fontSize: 15 }}>
-              清华网络学堂桌面客户端，让公告、课件、作业、讨论与 AI 学习辅助回到一个安静顺手的工作台。
+              面向清华网络学堂的第三方桌面客户端，让公告、课件、作业、讨论与 AI 学习辅助回到一个安静顺手的工作台。
             </Paragraph>
             <Space style={{ marginTop: 12 }} wrap>
               <Tag color="purple">v{info?.version || '1.1.0'}</Tag>
@@ -44,6 +44,7 @@ export default function AboutPage() {
         <Descriptions bordered size="small" column={2}>
           <Descriptions.Item label="版本号">v{info?.version || '1.1.0'}</Descriptions.Item>
           <Descriptions.Item label="许可证">MIT License</Descriptions.Item>
+          <Descriptions.Item label="项目性质">第三方非官方客户端</Descriptions.Item>
           <Descriptions.Item label="开发工具">Claude Code、Codex</Descriptions.Item>
           <Descriptions.Item label="运行平台">
             {info ? `${info.platform} ${info.arch}` : 'Windows x64'}

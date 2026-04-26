@@ -1,0 +1,9 @@
+SourceHanSansSC-Regular.ttf
+
+This font is part of Source Han Sans / Noto Sans CJK and is distributed under
+the SIL Open Font License 1.1.
+
+Project:
+https://github.com/adobe-fonts/source-han-sans
+
+Keep this notice when redistributing the font with learn++.
