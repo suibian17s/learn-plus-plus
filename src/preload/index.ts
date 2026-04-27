@@ -87,6 +87,12 @@ const api = {
   },
   app: {
     info: () => ipcRenderer.invoke('app:info'),
+    checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),
+    onResume: (cb: () => void) => {
+      const handler = () => cb()
+      ipcRenderer.on('app:resume', handler)
+      return () => ipcRenderer.removeListener('app:resume', handler)
+    },
   },
   onAutoLoginResult: (cb: (loggedIn: boolean) => void) => {
     const handler = (_e: any, loggedIn: boolean) => cb(loggedIn)

@@ -11,13 +11,21 @@ import { registerSettingsIpc } from './ipc/settings'
 import { registerAiIpc } from './ipc/ai'
 import { registerAppIpc } from './ipc/app'
 import { loadCreds } from './services/session-store'
-import { login, probeSession, probeApiSession, initFromBrowserSession, restoreApiSessionFromDisk, setCachedCreds } from './services/learn'
+import {
+  login,
+  probeSession,
+  probeApiSession,
+  initFromBrowserSession,
+  restoreApiSessionFromDisk,
+  setCachedCreds,
+} from './services/learn'
 
 const isDev = !app.isPackaged
 const startHidden = process.argv.includes('--hidden') || process.argv.includes('--background')
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let hiddenAt: number | null = null
 
 function getIcon(): Electron.NativeImage | undefined {
   try {
@@ -33,10 +41,15 @@ function getIcon(): Electron.NativeImage | undefined {
 function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     mainWindow = createWindow()
+  } else {
+    ensureRendererReady(mainWindow)
   }
+
   mainWindow.show()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
+  notifyRendererResume(mainWindow)
+  hiddenAt = null
 }
 
 function quitApp(): void {
@@ -50,13 +63,41 @@ function createTray(): void {
   if (!icon) return
 
   tray = new Tray(icon)
-  tray.setToolTip('learn++ 正在后台运行')
+  tray.setToolTip('learn++')
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开 learn++', click: showMainWindow },
     { type: 'separator' },
     { label: '退出', click: quitApp },
   ]))
   tray.on('click', showMainWindow)
+}
+
+function ensureRendererReady(win: BrowserWindow): void {
+  const hiddenFor = hiddenAt ? Date.now() - hiddenAt : 0
+  const url = win.webContents.getURL()
+  const shouldReload =
+    win.webContents.isCrashed() ||
+    !url ||
+    hiddenFor > 30 * 60 * 1000
+
+  if (shouldReload) {
+    log.info(`Reloading renderer before showing window, hiddenFor=${hiddenFor}`)
+    win.webContents.reloadIgnoringCache()
+  }
+}
+
+function notifyRendererResume(win: BrowserWindow): void {
+  const send = () => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('app:resume')
+    }
+  }
+
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', send)
+  } else {
+    send()
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -81,7 +122,22 @@ function createWindow(): BrowserWindow {
   win.on('close', (event) => {
     if (isQuitting) return
     event.preventDefault()
+    hiddenAt = Date.now()
     win.hide()
+  })
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    log.warn(`Renderer process gone: ${details.reason}`)
+    if (!isQuitting && !win.isDestroyed()) {
+      win.webContents.reloadIgnoringCache()
+    }
+  })
+
+  win.on('unresponsive', () => {
+    log.warn('Renderer became unresponsive, reloading')
+    if (!isQuitting && !win.isDestroyed()) {
+      win.webContents.reloadIgnoringCache()
+    }
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -110,7 +166,6 @@ async function tryAutoLogin(): Promise<boolean> {
 
   await restoreApiSessionFromDisk()
 
-  // First try: reuse the persisted API session used by thu-learn-lib calls.
   try {
     const ok = await probeApiSession()
     if (ok) {
@@ -119,18 +174,15 @@ async function tryAutoLogin(): Promise<boolean> {
     }
   } catch { /* session invalid */ }
 
-  // Second try: probe existing Chromium session cookies
   try {
     const ok = await probeSession()
     if (ok) {
-      // Session cookies are valid — initialize helper with CSRF token
       await initFromBrowserSession()
       log.info('Auto-login via Chromium session cookies succeeded')
       return true
     }
   } catch { /* session invalid */ }
 
-  // Third try: use saved credentials
   if (creds) {
     try {
       await login(creds.username, creds.password)
@@ -138,6 +190,7 @@ async function tryAutoLogin(): Promise<boolean> {
       return true
     } catch { /* creds invalid */ }
   }
+
   return false
 }
 

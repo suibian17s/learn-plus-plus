@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Card, Descriptions, Tag, Typography, Space, Divider } from 'antd'
-import { SafetyCertificateOutlined, ToolOutlined, RocketOutlined } from '@ant-design/icons'
+import { Button, Card, Descriptions, Divider, message, Space, Tag, Typography } from 'antd'
+import {
+  GithubOutlined,
+  RocketOutlined,
+  SafetyCertificateOutlined,
+  SyncOutlined,
+  ToolOutlined,
+} from '@ant-design/icons'
 import TsinghuaLogo from '../components/TsinghuaLogo'
 
-const { Title, Paragraph, Text } = Typography
+const { Title, Paragraph, Text, Link } = Typography
+const GITHUB_URL = 'https://github.com/suibian17s/learn-plus-plus'
 
 interface AppInfo {
   name: string
@@ -17,10 +24,34 @@ interface AppInfo {
 
 export default function AboutPage() {
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [checking, setChecking] = useState(false)
 
   useEffect(() => {
     window.learn.app.info().then(setInfo).catch(() => {})
   }, [])
+
+  async function handleCheckUpdates() {
+    setChecking(true)
+    try {
+      const result = await window.learn.app.checkForUpdates()
+      if (!result.ok) {
+        message.error(`检测更新失败: ${result.error || '请稍后重试'}`)
+        return
+      }
+
+      if (result.hasUpdate && result.latestVersion) {
+        message.info(`发现新版本 v${result.latestVersion}`)
+        if (result.releaseUrl) {
+          await window.learn.openExternal(result.releaseUrl)
+        }
+        return
+      }
+
+      message.success(`当前已是最新版本 v${result.currentVersion}`)
+    } finally {
+      setChecking(false)
+    }
+  }
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
@@ -33,7 +64,7 @@ export default function AboutPage() {
               面向清华网络学堂的第三方桌面客户端，让公告、课件、作业、讨论与 AI 学习辅助回到一个安静顺手的工作台。
             </Paragraph>
             <Space style={{ marginTop: 12 }} wrap>
-              <Tag color="purple">v{info?.version || '1.1.0'}</Tag>
+              <Tag color="purple">v{info?.version || '1.1.1'}</Tag>
               <Tag color="green">Windows x64</Tag>
               <Tag color="blue">Electron</Tag>
               <Tag color="cyan">React</Tag>
@@ -42,7 +73,7 @@ export default function AboutPage() {
         </div>
 
         <Descriptions bordered size="small" column={2}>
-          <Descriptions.Item label="版本号">v{info?.version || '1.1.0'}</Descriptions.Item>
+          <Descriptions.Item label="版本号">v{info?.version || '1.1.1'}</Descriptions.Item>
           <Descriptions.Item label="许可证">MIT License</Descriptions.Item>
           <Descriptions.Item label="项目性质">第三方非官方客户端</Descriptions.Item>
           <Descriptions.Item label="开发工具">Claude Code、Codex</Descriptions.Item>
@@ -53,6 +84,22 @@ export default function AboutPage() {
           <Descriptions.Item label="Chromium">v{info?.chrome || '-'}</Descriptions.Item>
           <Descriptions.Item label="Node.js">v{info?.node || '-'}</Descriptions.Item>
           <Descriptions.Item label="技术栈">Electron / React / TypeScript / Ant Design</Descriptions.Item>
+          <Descriptions.Item label="GitHub" span={2}>
+            <Space wrap>
+              <Link href={GITHUB_URL} onClick={(e) => {
+                e.preventDefault()
+                window.learn.openExternal(GITHUB_URL)
+              }}>
+                {GITHUB_URL}
+              </Link>
+              <Button size="small" icon={<GithubOutlined />} onClick={() => window.learn.openExternal(GITHUB_URL)}>
+                打开项目
+              </Button>
+              <Button size="small" icon={<SyncOutlined />} loading={checking} onClick={handleCheckUpdates}>
+                手动检测更新
+              </Button>
+            </Space>
+          </Descriptions.Item>
         </Descriptions>
 
         <Divider />
@@ -65,7 +112,7 @@ export default function AboutPage() {
             ['作业提交', '支持查看要求、老师留言、附件、提交记录、批阅结果，并可在截止前修改。'],
             ['多账号', '通过清华网络学堂官方页面登录，可保存多个账号并在左上角切换。'],
             ['后台常驻', '关闭窗口后进入后台，托盘图标可打开或退出，支持开机静默启动。'],
-            ['甘蔗 tutor', '提供公告总结、课件总结、讨论总结、作业答疑和高风险测试型作业辅助。'],
+            ['甘蔗 tutor', '提供公告总结、课件总结、讨论总结、作业答疑和测试型作业辅助。'],
           ].map(([title, desc]) => (
             <div key={title} style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 14, background: '#fafafa' }}>
               <Text strong>{title}</Text>

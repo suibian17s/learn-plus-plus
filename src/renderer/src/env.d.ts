@@ -86,6 +86,17 @@ interface LearnApi {
       chrome: string
       node: string
     }>
+    checkForUpdates: () => Promise<{
+      ok: boolean
+      currentVersion: string
+      latestVersion?: string
+      hasUpdate?: boolean
+      releaseName?: string
+      releaseUrl?: string
+      releasesUrl?: string
+      error?: string
+    }>
+    onResume: (cb: () => void) => () => void
   }
   onAutoLoginResult: (cb: (loggedIn: boolean) => void) => () => void
 }

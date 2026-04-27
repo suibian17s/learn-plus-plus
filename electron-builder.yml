@@ -25,6 +25,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
   shortcutName: learn++
   installerIcon: resources/icon.ico
   uninstallerIcon: resources/icon.ico

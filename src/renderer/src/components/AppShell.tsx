@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Layout, Menu, Select, Button, Dropdown, theme, message } from 'antd'
+import { Layout, Menu, Select, Button, Dropdown, theme, message, Alert } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   BellOutlined,
@@ -17,12 +17,27 @@ import {
   UserAddOutlined,
   CheckCircleOutlined,
   InfoCircleOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
 import { useDownloadStore } from '../store/downloads'
 import TsinghuaLogo from './TsinghuaLogo'
 
 const { Sider, Header, Content } = Layout
+
+interface SemesterOption {
+  id: string
+  name: string
+}
+
+interface UpdateNotice {
+  type: 'info' | 'error'
+  message: string
+  description?: string
+  releaseUrl?: string
+}
+
+const UPDATE_CHECK_STATE_KEY = 'learnpp:update-check'
 
 export default function AppShell() {
   const navigate = useNavigate()
@@ -31,13 +46,12 @@ export default function AppShell() {
   const { courseId } = useParams()
   const { courses, setCourses, setSelectedCourse, semesters, currentSemester, setSemesters, reset } = useAuthStore()
   const [accountStore, setAccountStore] = useState<{ activeId?: string; accounts: any[] }>({ accounts: [] })
+  const [updateNotice, setUpdateNotice] = useState<UpdateNotice | null>(null)
   const { token } = theme.useToken()
   const { downloads, addOrUpdate } = useDownloadStore()
 
-  // Derive selected tab from URL
   const pathParts = location.pathname.split('/')
   const currentTab = pathParts[3] || 'notifications'
-
   const selectedCourse = courses.find((c) => c.id === courseId)
 
   function isAuthErrorMessage(msg: string): boolean {
@@ -51,12 +65,50 @@ export default function AppShell() {
     navigate('/login')
   }
 
+  function normalizeSemester(raw: any): SemesterOption {
+    return {
+      id: String(raw?.id || raw),
+      name: String(raw?.name || raw),
+    }
+  }
+
+  function uniqueSemesters(preferred: SemesterOption, list: SemesterOption[]): SemesterOption[] {
+    const seen = new Set<string>()
+    return [preferred, ...list].filter((semester) => {
+      if (!semester.id || seen.has(semester.id)) return false
+      seen.add(semester.id)
+      return true
+    })
+  }
+
   useEffect(() => {
     loadCourses()
     loadAccounts()
+    runAutoUpdateCheck()
   }, [])
 
-  // Listen for download progress globally
+  useEffect(() => {
+    const unsub = window.learn.app.onResume(() => {
+      runAutoUpdateCheck()
+      queryClient.invalidateQueries()
+      window.learn.auth.status().then((status) => {
+        if (!status.loggedIn) {
+          reset()
+          navigate('/login')
+          return
+        }
+
+        if (useAuthStore.getState().courses.length === 0) {
+          loadCourses(false, true)
+        }
+      }).catch(() => {
+        reset()
+        navigate('/login')
+      })
+    })
+    return () => { unsub() }
+  }, [navigate, queryClient, reset])
+
   useEffect(() => {
     const unsub = window.learn.files.onProgress((data: any) => {
       addOrUpdate({
@@ -72,7 +124,7 @@ export default function AppShell() {
     return () => { unsub() }
   }, [addOrUpdate])
 
-  async function loadCourses(forceFirstCourse = false) {
+  async function loadCourses(forceFirstCourse = false, silent = false) {
     try {
       const result: any = await window.learn.course.listSemesters()
       if (result.error) {
@@ -80,41 +132,55 @@ export default function AppShell() {
           handleAuthError(result.error)
           return
         }
-        message.error(`加载课程失败: ${result.error}`)
+        if (!silent) message.error(`加载课程失败: ${result.error}`)
         return
       }
-      const { semesters: semList, current: curSem } = result
-      const semestersData = semList.map((s: any) => ({
-        id: String(s.id || s),
-        name: String(s.name || s),
-      }))
-      const currentData = {
-        id: String(curSem.id || curSem),
-        name: String(curSem.name || curSem),
-      }
-      setSemesters(semestersData, currentData)
 
-      const coursesResult: any = await window.learn.course.listCourses(currentData.id)
-      if (coursesResult.error) {
-        if (isAuthErrorMessage(coursesResult.error)) {
-          handleAuthError(coursesResult.error)
-          return
+      const semestersData = (result.semesters || []).map(normalizeSemester)
+      const currentData = normalizeSemester(result.current || semestersData[0])
+      const candidates = uniqueSemesters(currentData, semestersData)
+      let loadedSemester = candidates[0] || currentData
+      let coursesData: any[] = []
+      let lastError = ''
+
+      for (const candidate of candidates) {
+        const coursesResult: any = await window.learn.course.listCourses(candidate.id)
+        if (coursesResult?.error) {
+          if (isAuthErrorMessage(coursesResult.error)) {
+            handleAuthError(coursesResult.error)
+            return
+          }
+          lastError = coursesResult.error
+          continue
         }
-        message.error(`加载课程失败: ${coursesResult.error}`)
-        return
+
+        if (Array.isArray(coursesResult)) {
+          loadedSemester = candidate
+          coursesData = coursesResult
+          if (coursesData.length > 0) break
+        }
       }
-      const coursesData = coursesResult
+
+      if (!coursesData.length && lastError && !silent) {
+        message.error(`加载课程失败: ${lastError}`)
+      }
+
+      setSemesters(semestersData, loadedSemester)
       setCourses(coursesData)
-      if (coursesData.length > 0 && (!courseId || forceFirstCourse)) {
+
+      const currentCourseStillVisible = !!courseId && coursesData.some((c) => c.id === courseId)
+      if (coursesData.length > 0 && (!courseId || forceFirstCourse || !currentCourseStillVisible)) {
         setSelectedCourse(coursesData[0].id)
         navigate(`/course/${coursesData[0].id}/notifications`, { replace: true })
       }
     } catch (err: any) {
       console.error('Failed to load courses:', err)
       const msg = err?.message || String(err)
-      if (msg.includes('not logged in') || msg.includes('login')) {
+      if (isAuthErrorMessage(msg)) {
         reset()
         navigate('/login')
+      } else if (!silent) {
+        message.error(`加载课程失败: ${msg}`)
       }
     }
   }
@@ -142,13 +208,71 @@ export default function AppShell() {
     await loadCourses(true)
   }
 
+  async function handleGlobalRefresh() {
+    message.loading({ key: 'global-refresh', content: '正在刷新...' })
+    await loadAccounts()
+    await loadCourses(false, true)
+    await queryClient.invalidateQueries()
+    message.success({ key: 'global-refresh', content: '已刷新' })
+  }
+
+  function todayKey(): string {
+    return new Date().toISOString().slice(0, 10)
+  }
+
+  function readUpdateCheckState(): { date: string; failures: number } {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(UPDATE_CHECK_STATE_KEY) || '{}')
+      return {
+        date: String(parsed.date || ''),
+        failures: Number(parsed.failures || 0),
+      }
+    } catch {
+      return { date: '', failures: 0 }
+    }
+  }
+
+  function writeUpdateCheckState(state: { date: string; failures: number }): void {
+    localStorage.setItem(UPDATE_CHECK_STATE_KEY, JSON.stringify(state))
+  }
+
+  async function runAutoUpdateCheck() {
+    const today = todayKey()
+    const state = readUpdateCheckState()
+    if (state.date === today && state.failures >= 2) return
+
+    const result = await window.learn.app.checkForUpdates()
+    if (result.ok) {
+      writeUpdateCheckState({ date: today, failures: 0 })
+      if (result.hasUpdate && result.latestVersion) {
+        setUpdateNotice({
+          type: 'info',
+          message: `发现新版本 v${result.latestVersion}`,
+          description: `当前版本 v${result.currentVersion}，可前往 GitHub Releases 下载更新。`,
+          releaseUrl: result.releaseUrl,
+        })
+      }
+      return
+    }
+
+    const failures = state.date === today ? state.failures + 1 : 1
+    writeUpdateCheckState({ date: today, failures })
+    setUpdateNotice({
+      type: 'error',
+      message: '检测更新失败',
+      description: failures >= 2
+        ? `今天已连续 2 次检测失败，将暂时停止自动检测。${result.error || ''}`
+        : result.error || '请稍后重试。',
+    })
+  }
+
   async function handleAddAccount() {
     const result = await window.learn.auth.addAccountBrowser('https://learn.tsinghua.edu.cn/')
     if (!result.ok) {
       message.error(result.error || '添加账号失败')
       return
     }
-    message.success(`已添加并切换到账号：${result.account?.name || '新账号'}`)
+    message.success(`已添加并切换到账号: ${result.account?.name || '新账号'}`)
     await refreshAfterAccountChange()
   }
 
@@ -159,7 +283,7 @@ export default function AppShell() {
       message.error(result.error || '切换账号失败')
       return
     }
-    message.success(`已切换到账号：${result.account?.name || '已保存账号'}`)
+    message.success(`已切换到账号: ${result.account?.name || '已保存账号'}`)
     await refreshAfterAccountChange()
   }
 
@@ -168,7 +292,17 @@ export default function AppShell() {
     if (selected) {
       setSemesters(semesters, selected)
     }
-    const coursesData = await window.learn.course.listCourses(value)
+
+    const coursesData: any = await window.learn.course.listCourses(value)
+    if (coursesData?.error) {
+      if (isAuthErrorMessage(coursesData.error)) {
+        handleAuthError(coursesData.error)
+        return
+      }
+      message.error(`加载课程失败: ${coursesData.error}`)
+      return
+    }
+
     setCourses(coursesData)
     if (coursesData.length > 0) {
       setSelectedCourse(coursesData[0].id)
@@ -176,10 +310,9 @@ export default function AppShell() {
     }
   }
 
-  function handleCourseSelect(courseId: string) {
-    setSelectedCourse(courseId)
-    // Stay on same tab if possible
-    navigate(`/course/${courseId}/${currentTab}`)
+  function handleCourseSelect(nextCourseId: string) {
+    setSelectedCourse(nextCourseId)
+    navigate(`/course/${nextCourseId}/${currentTab}`)
   }
 
   const tabs = [
@@ -312,7 +445,9 @@ export default function AppShell() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {/* Download manager button */}
+            <Button type="text" icon={<ReloadOutlined />} onClick={handleGlobalRefresh}>
+              刷新
+            </Button>
             <Button
               type="text"
               icon={<DownloadOutlined />}
@@ -357,7 +492,6 @@ export default function AppShell() {
           </div>
         </Header>
 
-        {/* Tab bar */}
         <div style={{
           background: '#fff',
           borderBottom: '1px solid #f0f0f0',
@@ -397,6 +531,29 @@ export default function AppShell() {
           <Outlet />
         </Content>
       </Layout>
+      {updateNotice && (
+        <Alert
+          type={updateNotice.type}
+          showIcon
+          closable
+          message={updateNotice.message}
+          description={updateNotice.description}
+          onClose={() => setUpdateNotice(null)}
+          action={updateNotice.releaseUrl ? (
+            <Button size="small" type="link" onClick={() => window.learn.openExternal(updateNotice.releaseUrl!)}>
+              查看更新
+            </Button>
+          ) : undefined}
+          style={{
+            position: 'fixed',
+            left: 260,
+            right: 24,
+            bottom: 18,
+            zIndex: 1000,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          }}
+        />
+      )}
     </Layout>
   )
 }

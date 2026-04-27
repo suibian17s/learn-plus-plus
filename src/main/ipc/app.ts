@@ -1,4 +1,83 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, session } from 'electron'
+
+const REPO_OWNER = 'suibian17s'
+const REPO_NAME = 'learn-plus-plus'
+const RELEASES_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases`
+const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`
+
+function normalizeVersion(version: string): number[] {
+  const cleaned = version.trim().replace(/^v/i, '').split(/[+-]/)[0]
+  return cleaned.split('.').map((part) => {
+    const n = Number.parseInt(part.replace(/\D.*$/, ''), 10)
+    return Number.isFinite(n) ? n : 0
+  })
+}
+
+function compareVersions(a: string, b: string): number {
+  const left = normalizeVersion(a)
+  const right = normalizeVersion(b)
+  const length = Math.max(left.length, right.length)
+
+  for (let i = 0; i < length; i++) {
+    const diff = (left[i] || 0) - (right[i] || 0)
+    if (diff !== 0) return diff > 0 ? 1 : -1
+  }
+
+  return 0
+}
+
+async function checkLatestRelease() {
+  const currentVersion = app.getVersion()
+
+  try {
+    const resp = await session.defaultSession.fetch(LATEST_RELEASE_API, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': `learn++/${currentVersion}`,
+      },
+    })
+
+    if (!resp.ok) {
+      return {
+        ok: false,
+        currentVersion,
+        error: `GitHub 返回 ${resp.status}`,
+      }
+    }
+
+    const release = await resp.json() as {
+      tag_name?: string
+      name?: string
+      html_url?: string
+      draft?: boolean
+      prerelease?: boolean
+    }
+    const latestVersion = String(release.tag_name || '').replace(/^v/i, '')
+    if (!latestVersion) {
+      return {
+        ok: false,
+        currentVersion,
+        error: '未找到最新版本号',
+      }
+    }
+
+    return {
+      ok: true,
+      currentVersion,
+      latestVersion,
+      hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+      releaseName: release.name || release.tag_name || `v${latestVersion}`,
+      releaseUrl: release.html_url || RELEASES_URL,
+      releasesUrl: RELEASES_URL,
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      currentVersion,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
 
 export function registerAppIpc(): void {
   ipcMain.handle('app:info', () => ({
@@ -10,4 +89,6 @@ export function registerAppIpc(): void {
     chrome: process.versions.chrome,
     node: process.versions.node,
   }))
+
+  ipcMain.handle('app:check-updates', checkLatestRelease)
 }
