@@ -5,3 +5,5 @@ dist-installer/
 .DS_Store
 Thumbs.db
 *.enc
+.worktrees/
+.superpowers/
