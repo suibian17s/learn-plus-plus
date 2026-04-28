@@ -10,6 +10,7 @@ import { registerDiscussionIpc } from './ipc/discussion'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerAiIpc } from './ipc/ai'
 import { registerAppIpc } from './ipc/app'
+import { registerStatsIpc } from './ipc/stats'
 import { loadCreds } from './services/session-store'
 import {
   login,
@@ -19,6 +20,7 @@ import {
   restoreApiSessionFromDisk,
   setCachedCreds,
 } from './services/learn'
+import { startTracking, pauseTracking, resumeTracking } from './services/stats'
 
 const isDev = !app.isPackaged
 const startHidden = process.argv.includes('--hidden') || process.argv.includes('--background')
@@ -49,6 +51,7 @@ function showMainWindow(): void {
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
   notifyRendererResume(mainWindow)
+  resumeTracking()
   hiddenAt = null
 }
 
@@ -127,6 +130,7 @@ function createWindow(): BrowserWindow {
     if (isQuitting) return
     event.preventDefault()
     hiddenAt = Date.now()
+    pauseTracking()
     win.hide()
   })
 
@@ -227,6 +231,7 @@ app.whenReady().then(async () => {
   registerSettingsIpc()
   registerAiIpc()
   registerAppIpc()
+  registerStatsIpc()
 
   mainWindow = createWindow()
   createTray()
@@ -236,6 +241,8 @@ app.whenReady().then(async () => {
   tryAutoLogin().then((loggedIn) => {
     mainWindow?.webContents.send('auto-login-result', loggedIn)
   })
+
+  startTracking()
 })
 
 app.on('window-all-closed', () => {
