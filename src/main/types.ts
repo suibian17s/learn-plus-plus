@@ -153,3 +153,46 @@ export interface GenerateResult {
   attachmentSpec?: { kind: 'docx' | 'pdf'; filename: string; buffer: number[] }
   meta: { tokensUsed: number; modelId: string }
 }
+
+export interface StatsSnapshot {
+  todayMinutes: number
+  streakDays: number
+  completedCourses: number
+  totalCourses: number
+  weeklyMinutes: number
+  todayFocus: TodayFocusItem[]
+  courseProgress: CourseProgressItem[]
+  recentUpdates: RecentUpdateItem[]
+}
+
+export interface TodayFocusItem {
+  priority: 'P0' | 'P1' | 'P2'
+  courseName: string
+  courseId: string
+  title: string
+  tag: string
+  deadline?: string
+  targetTab: 'homework' | 'notifications' | 'discussion' | 'files'
+  targetId?: string
+}
+
+export interface CourseProgressItem {
+  courseId: string
+  courseName: string
+  done: number
+  total: number
+  percent: number
+}
+
+export interface RecentUpdateItem {
+  courseId: string
+  courseName: string
+  text: string
+  time: string
+  kind: 'notice' | 'file' | 'homework' | 'discussion'
+}
+
+export interface StatsDailyRecord {
+  dailyMinutes: Record<string, number>
+  lastActiveDate: string
+}
