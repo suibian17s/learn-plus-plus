@@ -9,6 +9,7 @@ import {
   RobotOutlined,
   UploadOutlined,
   ReloadOutlined,
+  SearchOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import EmptyState from '../components/EmptyState'
@@ -30,6 +31,7 @@ export default function HomeworkPage() {
   const [content, setContent] = useState('')
   const [attachPath, setAttachPath] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [keyword, setKeyword] = useState('')
 
   const { data: homeworks, isLoading } = useQuery({
     queryKey: ['homework', courseId],
@@ -40,10 +42,14 @@ export default function HomeworkPage() {
   const { uncompleted, completed, expired } = useMemo(() => {
     if (!homeworks) return { uncompleted: [], completed: [], expired: [] }
     const now = dayjs()
+    const q = keyword.trim().toLowerCase()
+    const visibleHomeworks = q
+      ? homeworks.filter((hw: any) => `${hw.title || ''} ${hw.description || ''} ${hw.teacherMessage || ''}`.toLowerCase().includes(q))
+      : homeworks
     const un: any[] = []
     const done: any[] = []
     const exp: any[] = []
-    for (const hw of homeworks) {
+    for (const hw of visibleHomeworks) {
       if (hw.status === '已提交' || hw.status === '已批阅') {
         done.push(hw)
       } else if (hw.deadline && dayjs(hw.deadline).isBefore(now)) {
@@ -57,7 +63,7 @@ export default function HomeworkPage() {
     // Sort completed: graded first, then submitted
     done.sort((a, b) => (a.status === '已批阅' ? -1 : 1))
     return { uncompleted: un, completed: done, expired: exp }
-  }, [homeworks])
+  }, [homeworks, keyword])
 
   async function handleSubmit() {
     if (!submitTarget) return
@@ -207,19 +213,22 @@ export default function HomeworkPage() {
   if (isLoading) return <Spin style={{ display: 'block', margin: '40px auto' }} />
   if (!homeworks?.length) return <EmptyState description="暂无作业" />
 
-  const hasActive = uncompleted.length > 0
-
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16, gap: 8 }}>
+      <div className="lp2-course-local-toolbar">
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder="搜索作业"
+          allowClear
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+        />
         <Button icon={<ReloadOutlined />} onClick={() => queryClient.invalidateQueries({ queryKey: ['homework', courseId] })}>
           刷新
         </Button>
-        {hasActive && (
-          <Button icon={<RobotOutlined />} onClick={() => navigate(`/course/${courseId}/homework/auto`)}>
-            甘蔗 tutor
-          </Button>
-        )}
+        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => navigate(`/course/${courseId}/homework/auto`)}>
+          甘蔗 Tutor 辅助
+        </Button>
       </div>
 
       {uncompleted.length > 0 && (

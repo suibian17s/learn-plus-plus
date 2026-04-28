@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, List, Drawer, Typography, Spin, Tag } from 'antd'
-import { DownloadOutlined, FolderOpenOutlined, PaperClipOutlined } from '@ant-design/icons'
+import { Button, List, Drawer, Input, Typography, Spin, Tag, message } from 'antd'
+import { DownloadOutlined, FolderOpenOutlined, PaperClipOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons'
 import DOMPurify from 'dompurify'
 import EmptyState from '../components/EmptyState'
 import { useDownloadStore } from '../store/downloads'
@@ -11,6 +11,7 @@ import { formatDateTime } from '../utils/time'
 export default function NotificationsPage() {
   const { courseId } = useParams()
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [keyword, setKeyword] = useState('')
   const [downloadingAttachment, setDownloadingAttachment] = useState(false)
   const [attachmentState, setAttachmentState] = useState<{ downloaded: boolean; destPath: string } | null>(null)
   const downloadRecords = useDownloadStore((s) => s.downloads)
@@ -22,6 +23,11 @@ export default function NotificationsPage() {
     enabled: !!courseId,
   })
 
+  const filteredNotices = notices?.filter((notice: any) => {
+    const q = keyword.trim().toLowerCase()
+    if (!q) return true
+    return `${notice.title || ''} ${notice.publisher || ''}`.toLowerCase().includes(q)
+  })
   const detail = notices?.find((n: any) => n.id === detailId)
   const attachmentHistory = detail?.attachment?.name
     ? downloadRecords.find((item) => (
@@ -91,8 +97,15 @@ export default function NotificationsPage() {
           }
         `}
       </style>
+      <div className="lp2-course-local-toolbar">
+        <Input prefix={<SearchOutlined />} placeholder="搜索公告" allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
+          甘蔗 Tutor 总结
+        </Button>
+      </div>
+
       <List
-        dataSource={notices}
+        dataSource={filteredNotices}
         renderItem={(item: any) => (
           <List.Item
             onClick={() => setDetailId(item.id)}

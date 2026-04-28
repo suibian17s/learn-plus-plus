@@ -1,9 +1,62 @@
-import { app, ipcMain, session } from 'electron'
+import { app, BrowserWindow, ipcMain, session } from 'electron'
 
 const REPO_OWNER = 'suibian17s'
 const REPO_NAME = 'learn-plus-plus'
 const RELEASES_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases`
 const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`
+const normalBounds = new WeakMap<BrowserWindow, Electron.Rectangle>()
+const customMaximized = new WeakMap<BrowserWindow, boolean>()
+
+function getTargetWindow(sender: Electron.WebContents): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(sender)
+    || BrowserWindow.getFocusedWindow()
+    || BrowserWindow.getAllWindows().find((win) => !win.isDestroyed())
+    || null
+}
+
+function runWindowCommand(sender: Electron.WebContents, command: string): { ok: boolean } {
+  const win = getTargetWindow(sender)
+  if (!win) return { ok: false }
+
+  if (command === 'minimize') {
+    if (win.isDestroyed()) return { ok: false }
+    win.setSkipTaskbar(false)
+    win.minimize()
+    return { ok: true }
+  }
+
+  if (command === 'toggle-maximize') {
+    const shouldRestore = win.isMaximized() || customMaximized.get(win)
+    if (shouldRestore) {
+      win.unmaximize()
+      win.restore()
+      const bounds = normalBounds.get(win)
+      if (bounds) {
+        setTimeout(() => {
+          if (!win.isDestroyed()) win.setBounds(bounds, true)
+        }, 0)
+      }
+      customMaximized.set(win, false)
+    } else {
+      if (!win.isMaximized()) normalBounds.set(win, win.getBounds())
+      win.maximize()
+      customMaximized.set(win, true)
+    }
+    return { ok: true }
+  }
+
+  if (command === 'close') {
+    win.close()
+    return { ok: true }
+  }
+
+  if (command === 'quit') {
+    setTimeout(() => app.exit(0), 0)
+    return { ok: true }
+  }
+
+  return { ok: false }
+}
 
 function normalizeVersion(version: string): number[] {
   const cleaned = version.trim().replace(/^v/i, '').split(/[+-]/)[0]
@@ -91,4 +144,24 @@ export function registerAppIpc(): void {
   }))
 
   ipcMain.handle('app:check-updates', checkLatestRelease)
+
+  ipcMain.on('window:command', (event, command: string) => {
+    runWindowCommand(event.sender, command)
+  })
+
+  ipcMain.handle('window:minimize', (event) => {
+    return runWindowCommand(event.sender, 'minimize')
+  })
+
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    return runWindowCommand(event.sender, 'toggle-maximize')
+  })
+
+  ipcMain.handle('window:close', (event) => {
+    return runWindowCommand(event.sender, 'close')
+  })
+
+  ipcMain.handle('window:quit', (event) => {
+    return runWindowCommand(event.sender, 'quit')
+  })
 }

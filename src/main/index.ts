@@ -109,6 +109,10 @@ function createWindow(): BrowserWindow {
     show: !startHidden,
     title: 'learn++',
     icon: getIcon(),
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,

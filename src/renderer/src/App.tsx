@@ -5,6 +5,8 @@ import { useAiStore } from './store/ai'
 import AppShell from './components/AppShell'
 import LoginPage from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import MailboxPage from './pages/Mailbox'
+import TutorPage from './pages/Tutor'
 import NotificationsPage from './pages/Notifications'
 import FilesPage from './pages/Files'
 import HomeworkPage from './pages/Homework'
@@ -64,6 +66,8 @@ export default function App() {
         <Route path="/login" element={loggedIn ? <Navigate to="/" /> : <LoginPage />} />
         <Route path="/" element={loggedIn ? <AppShell /> : <Navigate to="/login" />}>
           <Route index element={<Dashboard />} />
+          <Route path="mailbox" element={<MailboxPage />} />
+          <Route path="tutor" element={<TutorPage />} />
           <Route path="course/:courseId/notifications" element={<NotificationsPage />} />
           <Route path="course/:courseId/files" element={<FilesPage />} />
           <Route path="course/:courseId/homework" element={<HomeworkPage />} />
@@ -74,6 +78,7 @@ export default function App() {
           <Route path="course/:courseId/answering" element={<AnsweringPage />} />
           <Route path="course/:courseId/answering/detail/:questionId" element={<AnsweringDetailPage />} />
           <Route path="course/:courseId/questionnaire" element={<QuestionnairePage />} />
+          <Route path="course/:courseId/tutor" element={<TutorPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="downloads" element={<DownloadsPage />} />
           <Route path="about" element={<AboutPage />} />

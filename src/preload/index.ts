@@ -88,6 +88,12 @@ const api = {
   app: {
     info: () => ipcRenderer.invoke('app:info'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),
+    controlWindow: (command: 'minimize' | 'toggle-maximize' | 'close') =>
+      ipcRenderer.send('window:command', command),
+    minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+    toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),
+    closeWindow: () => ipcRenderer.invoke('window:close'),
+    quitWindow: () => ipcRenderer.invoke('window:quit'),
     onResume: (cb: () => void) => {
       const handler = () => cb()
       ipcRenderer.on('app:resume', handler)

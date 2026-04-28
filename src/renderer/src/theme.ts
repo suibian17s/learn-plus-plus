@@ -2,11 +2,11 @@ import type { ThemeConfig } from 'antd'
 
 export const tsinghuaTheme: ThemeConfig = {
   token: {
-    colorPrimary: '#660874',
-    colorPrimaryHover: '#7B2D8E',
-    colorPrimaryActive: '#5C246E',
-    colorInfo: '#660874',
-    colorLink: '#660874',
+    colorPrimary: '#5B57D9',
+    colorPrimaryHover: '#6F67F2',
+    colorPrimaryActive: '#4743BD',
+    colorInfo: '#5B57D9',
+    colorLink: '#5B57D9',
     borderRadius: 8,
     fontFamily: '"PingFang SC","Microsoft YaHei",-apple-system,system-ui,sans-serif',
     colorBgLayout: '#FAFAFB',
@@ -17,13 +17,13 @@ export const tsinghuaTheme: ThemeConfig = {
       headerBg: '#FFFFFF',
     },
     Menu: {
-      itemSelectedBg: '#F3E8F7',
-      itemSelectedColor: '#660874',
-      itemHoverBg: '#F7EFFA',
+      itemSelectedBg: '#F0EEFF',
+      itemSelectedColor: '#5B57D9',
+      itemHoverBg: '#F6F5FF',
     },
     Tabs: {
-      inkBarColor: '#660874',
-      itemSelectedColor: '#660874',
+      inkBarColor: '#5B57D9',
+      itemSelectedColor: '#5B57D9',
     },
     Button: {
       primaryShadow: 'none',

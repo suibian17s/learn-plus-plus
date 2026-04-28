@@ -7,8 +7,8 @@
 body {
   font-family: "PingFang SC", "Microsoft YaHei", -apple-system, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  background: #FAFAFB;
-  color: #1a1a2e;
+  background: #FAF8FF;
+  color: #24263a;
 }
 
 #root {
@@ -25,20 +25,20 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
+  background: #d8d7ea;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #bbb;
+  background: #bbb8db;
 }
 
 .ant-layout {
-  background: #FAFAFB;
+  background: #FAF8FF;
 }
 
 .ant-layout-sider {
-  background: #FAFAFB !important;
+  background: #fff !important;
 }
 
 /* Allow course name text to wrap and menu items to grow in height */

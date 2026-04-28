@@ -1,27 +1,31 @@
 import { useEffect, useState } from 'react'
-import { Outlet, useNavigate, useParams, useLocation } from 'react-router-dom'
-import { Layout, Menu, Select, Button, Dropdown, theme, message, Alert } from 'antd'
+import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Alert, Badge, Button, Dropdown, Input, Layout, message, Select, Tooltip } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   BellOutlined,
-  FolderOutlined,
-  FileTextOutlined,
-  MessageOutlined,
-  QuestionCircleOutlined,
-  FormOutlined,
-  SettingOutlined,
-  LogoutOutlined,
-  RobotOutlined,
-  SwapOutlined,
-  DownloadOutlined,
-  UserAddOutlined,
   CheckCircleOutlined,
-  InfoCircleOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
+  FolderOutlined,
+  FormOutlined,
+  HomeOutlined,
+  LogoutOutlined,
+  MailOutlined,
+  MessageOutlined,
+  MoreOutlined,
   ReloadOutlined,
+  RobotOutlined,
+  SearchOutlined,
+  SettingOutlined,
+  StarOutlined,
+  SwapOutlined,
+  UserAddOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
 import { useDownloadStore } from '../store/downloads'
 import TsinghuaLogo from './TsinghuaLogo'
+import WindowControls from './WindowControls'
 
 const { Sider, Header, Content } = Layout
 
@@ -44,15 +48,118 @@ export default function AppShell() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const { courseId } = useParams()
-  const { courses, setCourses, setSelectedCourse, semesters, currentSemester, setSemesters, reset } = useAuthStore()
+  const {
+    courses,
+    selectedCourseId,
+    setCourses,
+    setSelectedCourse,
+    currentSemester,
+    setSemesters,
+    reset,
+  } = useAuthStore()
   const [accountStore, setAccountStore] = useState<{ activeId?: string; accounts: any[] }>({ accounts: [] })
   const [updateNotice, setUpdateNotice] = useState<UpdateNotice | null>(null)
-  const { token } = theme.useToken()
   const { downloads, addOrUpdate } = useDownloadStore()
 
   const pathParts = location.pathname.split('/')
-  const currentTab = pathParts[3] || 'notifications'
-  const selectedCourse = courses.find((c) => c.id === courseId)
+  const isCourseRoute = location.pathname.startsWith('/course/')
+  const isHomeRoute = location.pathname === '/'
+  const isMailboxRoute = location.pathname.startsWith('/mailbox')
+  const currentTab = isCourseRoute ? pathParts[3] || 'files' : ''
+  const isTutorRoute = location.pathname.startsWith('/tutor') || currentTab === 'tutor'
+  const selectedCourse = courses.find((course) => course.id === courseId)
+    || courses.find((course) => course.id === selectedCourseId)
+    || courses[0]
+  const primaryCourseId = courseId || selectedCourse?.id || courses[0]?.id
+  const selectedCourseIndex = Math.max(0, courses.findIndex((course) => course.id === selectedCourse?.id))
+  const courseProgress = Math.min(92, 68 + selectedCourseIndex * 3)
+  const activeDownloadCount = downloads.filter((download) => download.status === 'downloading').length
+  const topbarMode = isHomeRoute
+    ? 'home'
+    : isTutorRoute
+      ? 'tutor'
+      : isCourseRoute
+        ? 'course'
+        : isMailboxRoute
+          ? 'mail'
+          : 'context'
+
+  const globalNav = [
+    { key: 'home', label: '首页', path: '/', icon: <HomeOutlined /> },
+    { key: 'mailbox', label: '邮箱', path: '/mailbox', icon: <MailOutlined /> },
+    { key: 'tutor', label: '甘蔗 Tutor', path: '/tutor', icon: <RobotOutlined />, tutor: true },
+  ]
+
+  const tabs = [
+    { key: 'notifications', label: '公告', icon: <BellOutlined /> },
+    { key: 'files', label: '课件', icon: <FolderOutlined /> },
+    { key: 'homework', label: '作业', icon: <FileTextOutlined /> },
+    { key: 'discussion', label: '讨论', icon: <MessageOutlined /> },
+    { key: 'questionnaire', label: '问卷', icon: <FormOutlined /> },
+  ]
+
+  const accountMenu = [
+    ...accountStore.accounts.map((account) => ({
+      key: `account:${account.id}`,
+      label: (
+        <div style={{ minWidth: 170 }}>
+          <div style={{ fontWeight: account.id === accountStore.activeId ? 600 : 400 }}>
+            {account.name}
+          </div>
+          {account.department && (
+            <div style={{ color: '#9CA3AF', fontSize: 12 }}>{account.department}</div>
+          )}
+        </div>
+      ),
+      icon: account.id === accountStore.activeId ? <CheckCircleOutlined /> : <SwapOutlined />,
+      disabled: account.id === accountStore.activeId,
+    })),
+    accountStore.accounts.length ? { type: 'divider' as const } : null,
+    { key: 'add-account', label: '添加账号', icon: <UserAddOutlined /> },
+    { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true },
+  ].filter(Boolean) as any[]
+
+  useEffect(() => {
+    loadCourses()
+    loadAccounts()
+    runAutoUpdateCheck()
+  }, [])
+
+  useEffect(() => {
+    const unsub = window.learn.app.onResume(() => {
+      runAutoUpdateCheck()
+      queryClient.invalidateQueries()
+      window.learn.auth.status().then((status) => {
+        if (!status.loggedIn) {
+          reset()
+          navigate('/login')
+          return
+        }
+        if (useAuthStore.getState().courses.length === 0) {
+          loadCourses(false, true)
+        }
+      }).catch(() => {
+        reset()
+        navigate('/login')
+      })
+    })
+    return () => { unsub() }
+  }, [navigate, queryClient, reset])
+
+  useEffect(() => {
+    const unsub = window.learn.files.onProgress((data: any) => {
+      addOrUpdate({
+        id: data.id,
+        fileName: data.fileName || '',
+        loaded: data.loaded,
+        total: data.total,
+        status: data.status,
+        destPath: data.destPath,
+        time: Date.now(),
+      })
+    })
+    return () => { unsub() }
+  }, [addOrUpdate])
 
   function isAuthErrorMessage(msg: string): boolean {
     const lower = msg.toLowerCase()
@@ -80,49 +187,6 @@ export default function AppShell() {
       return true
     })
   }
-
-  useEffect(() => {
-    loadCourses()
-    loadAccounts()
-    runAutoUpdateCheck()
-  }, [])
-
-  useEffect(() => {
-    const unsub = window.learn.app.onResume(() => {
-      runAutoUpdateCheck()
-      queryClient.invalidateQueries()
-      window.learn.auth.status().then((status) => {
-        if (!status.loggedIn) {
-          reset()
-          navigate('/login')
-          return
-        }
-
-        if (useAuthStore.getState().courses.length === 0) {
-          loadCourses(false, true)
-        }
-      }).catch(() => {
-        reset()
-        navigate('/login')
-      })
-    })
-    return () => { unsub() }
-  }, [navigate, queryClient, reset])
-
-  useEffect(() => {
-    const unsub = window.learn.files.onProgress((data: any) => {
-      addOrUpdate({
-        id: data.id,
-        fileName: data.fileName || '',
-        loaded: data.loaded,
-        total: data.total,
-        status: data.status,
-        destPath: data.destPath,
-        time: Date.now(),
-      })
-    })
-    return () => { unsub() }
-  }, [addOrUpdate])
 
   async function loadCourses(forceFirstCourse = false, silent = false) {
     try {
@@ -153,7 +217,6 @@ export default function AppShell() {
           lastError = coursesResult.error
           continue
         }
-
         if (Array.isArray(coursesResult)) {
           loadedSemester = candidate
           coursesData = coursesResult
@@ -168,13 +231,15 @@ export default function AppShell() {
       setSemesters(semestersData, loadedSemester)
       setCourses(coursesData)
 
-      const currentCourseStillVisible = !!courseId && coursesData.some((c) => c.id === courseId)
-      if (coursesData.length > 0 && (!courseId || forceFirstCourse || !currentCourseStillVisible)) {
-        setSelectedCourse(coursesData[0].id)
-        navigate(`/course/${coursesData[0].id}/notifications`, { replace: true })
+      const firstCourseId = coursesData[0]?.id
+      const currentCourseStillVisible = !!courseId && coursesData.some((course) => course.id === courseId)
+      if (firstCourseId && (!selectedCourseId || !coursesData.some((course) => course.id === selectedCourseId))) {
+        setSelectedCourse(firstCourseId)
+      }
+      if (firstCourseId && (forceFirstCourse || (courseId && !currentCourseStillVisible))) {
+        navigate(`/course/${firstCourseId}/files`, { replace: !forceFirstCourse })
       }
     } catch (err: any) {
-      console.error('Failed to load courses:', err)
       const msg = err?.message || String(err)
       if (isAuthErrorMessage(msg)) {
         reset()
@@ -287,83 +352,103 @@ export default function AppShell() {
     await refreshAfterAccountChange()
   }
 
-  async function handleSemesterChange(value: string) {
-    const selected = semesters.find((s) => s.id === value)
-    if (selected) {
-      setSemesters(semesters, selected)
-    }
-
-    const coursesData: any = await window.learn.course.listCourses(value)
-    if (coursesData?.error) {
-      if (isAuthErrorMessage(coursesData.error)) {
-        handleAuthError(coursesData.error)
-        return
-      }
-      message.error(`加载课程失败: ${coursesData.error}`)
-      return
-    }
-
-    setCourses(coursesData)
-    if (coursesData.length > 0) {
-      setSelectedCourse(coursesData[0].id)
-      navigate(`/course/${coursesData[0].id}/notifications`)
-    }
-  }
-
   function handleCourseSelect(nextCourseId: string) {
     setSelectedCourse(nextCourseId)
-    navigate(`/course/${nextCourseId}/${currentTab}`)
+    const nextTab = isCourseRoute && tabs.some((tab) => tab.key === currentTab) ? currentTab : 'files'
+    navigate(`/course/${nextCourseId}/${nextTab}`)
   }
 
-  const tabs = [
-    { key: 'notifications', label: '公告', icon: <BellOutlined /> },
-    { key: 'files', label: '课件', icon: <FolderOutlined /> },
-    { key: 'homework', label: '作业', icon: <FileTextOutlined /> },
-    { key: 'discussion', label: '讨论', icon: <MessageOutlined /> },
-    { key: 'answering', label: '答疑', icon: <QuestionCircleOutlined /> },
-    { key: 'questionnaire', label: '问卷', icon: <FormOutlined /> },
-  ]
+  function handlePlannedEntry(label: string) {
+    message.info(`${label} 将在 v2.0 后续开发中接入`)
+  }
 
-  const activeDownloadCount = downloads.filter((d) => d.status === 'downloading').length
-
-  const userMenu = [
-    { key: 'settings', label: '设置', icon: <SettingOutlined /> },
-    { key: 'about', label: '关于 learn++', icon: <InfoCircleOutlined /> },
-    { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true },
-  ]
-
-  const accountMenu = [
-    ...accountStore.accounts.map((account) => ({
-      key: `account:${account.id}`,
-      label: (
-        <div style={{ minWidth: 170 }}>
-          <div style={{ fontWeight: account.id === accountStore.activeId ? 600 : 400 }}>
-            {account.name}
+  function renderTopbar() {
+    if (isHomeRoute) {
+      return (
+        <>
+          <button className="lp2-search lp2-home-search" type="button" onClick={() => handlePlannedEntry('全局搜索')}>
+            <SearchOutlined />
+            <span>搜索课程、作业、资料、邮件、公告...</span>
+          </button>
+          <div className="lp2-top-actions">
+            <Tooltip title="刷新">
+              <Button type="text" icon={<ReloadOutlined />} onClick={handleGlobalRefresh} />
+            </Tooltip>
+            <Badge count={activeDownloadCount} size="small">
+              <Button icon={<DownloadOutlined />} onClick={() => navigate('/downloads')}>
+                下载管理
+              </Button>
+            </Badge>
+            <Button icon={<SettingOutlined />} onClick={() => navigate('/settings')}>
+              设置
+            </Button>
           </div>
-          {account.department && (
-            <div style={{ color: '#999', fontSize: 12 }}>{account.department}</div>
-          )}
+        </>
+      )
+    }
+
+    if (isTutorRoute) {
+      return (
+        <div className="lp2-context-head lp2-tutor-context-head">
+          <RobotOutlined className="lp2-tutor-leaf-icon" />
+          <div>
+            <h1>甘蔗 Tutor</h1>
+            <p>你的 AI 学习助手</p>
+          </div>
+          <span className="lp2-online-pill"><CheckCircleOutlined /> 在线</span>
         </div>
-      ),
-      icon: account.id === accountStore.activeId ? <CheckCircleOutlined /> : <SwapOutlined />,
-      disabled: account.id === accountStore.activeId,
-    })),
-    accountStore.accounts.length ? { type: 'divider' as const } : null,
-    { key: 'add-account', label: '添加账号', icon: <UserAddOutlined /> },
-    { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true },
-  ].filter(Boolean) as any[]
+      )
+    }
+
+    if (isCourseRoute && selectedCourse) {
+      return (
+        <div className="lp2-context-head lp2-course-context-head">
+          <div className="lp2-context-title">
+            <h1>{selectedCourse.name}</h1>
+            <p>{selectedCourse.teacher || '课程教师'} · {currentSemester?.name || '当前学期'}</p>
+          </div>
+          <div className="lp2-context-stats">
+            <span><small>学习进度</small><strong>{courseProgress}%</strong></span>
+            <span><small>待完成任务</small><strong>2</strong></span>
+            <span><small>最近更新</small><strong>1 小时前</strong></span>
+          </div>
+          <nav className="lp2-course-tabs" aria-label="课程标签">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                className={`lp2-course-tab${currentTab === tab.key ? ' active' : ''}`}
+                type="button"
+                onClick={() => navigate(`/course/${primaryCourseId}/${tab.key}`)}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      )
+    }
+
+    if (isMailboxRoute) {
+      return (
+        <div className="lp2-context-head lp2-mail-context-head">
+          <Input prefix={<SearchOutlined />} placeholder="搜索邮件" allowClear />
+          <Select defaultValue="all" options={[{ value: 'all', label: '全部' }, { value: 'unread', label: '未读' }]} />
+          <Select defaultValue="time" options={[{ value: 'time', label: '时间排序' }, { value: 'star', label: '星标优先' }]} />
+          <Button icon={<ReloadOutlined />} onClick={() => handlePlannedEntry('刷新邮箱')} />
+          <Button icon={<StarOutlined />} onClick={() => handlePlannedEntry('星标邮件')} />
+          <Button icon={<MoreOutlined />} onClick={() => handlePlannedEntry('更多邮件操作')} />
+        </div>
+      )
+    }
+
+    return <div className="lp2-context-head" />
+  }
 
   return (
-    <Layout style={{ height: '100vh' }}>
-      <Sider
-        width={240}
-        collapsedWidth={0}
-        breakpoint="lg"
-        style={{
-          borderRight: '1px solid #f0f0f0',
-          overflow: 'auto',
-        }}
-      >
+    <Layout className="lp2-shell">
+      <WindowControls />
+      <Sider width={284} collapsedWidth={0} breakpoint="lg" className="lp2-sidebar">
         <Dropdown
           trigger={['click']}
           menu={{
@@ -375,162 +460,68 @@ export default function AppShell() {
             },
           }}
         >
-          <button className="sidebar-logo" type="button">
-            <span className="sidebar-logo-icon-wrap">
-              <TsinghuaLogo size={42} />
-              <span className="sidebar-logo-swap">
-                <SwapOutlined />
-              </span>
-            </span>
-            <span className="sidebar-logo-text">learn++</span>
+          <button className="lp2-brand" type="button">
+            <TsinghuaLogo size={42} />
+            <span>Learn++</span>
+            <SwapOutlined className="lp2-brand-swap" />
           </button>
         </Dropdown>
 
-        {semesters.length > 0 && (
-          <div style={{ padding: '8px 16px' }}>
-            <Select
-              value={currentSemester?.id}
-              onChange={handleSemesterChange}
-              size="small"
-              style={{ width: '100%' }}
-              options={semesters.map((s) => ({ value: s.id, label: s.name }))}
-              prefix={<SwapOutlined />}
-            />
-          </div>
-        )}
-
-        <Menu
-          mode="inline"
-          className="sidebar-course-menu"
-          selectedKeys={[courseId || '']}
-          onClick={({ key }) => handleCourseSelect(key)}
-          items={courses.map((c) => ({
-            key: c.id,
-            label: (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-                <span style={{
-                  fontSize: 13,
-                  lineHeight: 1.4,
-                  whiteSpace: 'normal',
-                  wordBreak: 'break-word',
-                }}>{c.name}</span>
-                {c.teacher && (
-                  <span style={{ fontSize: 11, color: '#999', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                    {c.teacher}
-                  </span>
-                )}
-              </div>
-            ),
-          }))}
-          style={{ borderRight: 0, marginTop: 4 }}
-        />
-      </Sider>
-
-      <Layout>
-        <Header
-          style={{
-            background: '#fff',
-            borderBottom: '1px solid #f0f0f0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0 24px',
-            height: 56,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: '#660874' }}>
-              {selectedCourse?.name || 'learn++'}
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Button type="text" icon={<ReloadOutlined />} onClick={handleGlobalRefresh}>
-              刷新
-            </Button>
-            <Button
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => navigate('/downloads')}
-              style={{ position: 'relative' }}
-            >
-              下载
-              {activeDownloadCount > 0 && (
-                <span style={{
-                  position: 'absolute', top: 2, right: 2,
-                  background: '#1890FF', color: '#fff', borderRadius: '50%',
-                  width: 16, height: 16, fontSize: 10, lineHeight: '16px', textAlign: 'center',
-                }}>
-                  {activeDownloadCount}
-                </span>
-              )}
-            </Button>
-            <Button
-              icon={<RobotOutlined />}
-              onClick={() => navigate(`/course/${courseId || courses[0]?.id}/homework/auto`)}
-              style={{
-                color: '#237804',
-                background: '#F6FFED',
-                borderColor: '#B7EB8F',
-                fontWeight: 600,
-              }}
-            >
-              甘蔗 tutor
-            </Button>
-            <Dropdown
-              menu={{
-                items: userMenu,
-                onClick: ({ key }) => {
-                  if (key === 'logout') handleLogout()
-                  if (key === 'settings') navigate('/settings')
-                  if (key === 'about') navigate('/about')
-                },
-              }}
-            >
-              <Button type="text" icon={<SettingOutlined />} />
-            </Dropdown>
-          </div>
-        </Header>
-
-        <div style={{
-          background: '#fff',
-          borderBottom: '1px solid #f0f0f0',
-          display: 'flex',
-          padding: '0 24px',
-          height: 44,
-          alignItems: 'center',
-          gap: 0,
-        }}>
-          {tabs.map((tab) => {
-            const active = currentTab === tab.key
+        <nav className="lp2-primary-nav" aria-label="主导航">
+          {globalNav.map((item) => {
+            const active = item.path === '/'
+              ? location.pathname === '/'
+              : location.pathname.startsWith(item.path) || (item.key === 'tutor' && currentTab === 'tutor')
             return (
               <button
-                key={tab.key}
-                onClick={() => navigate(`/course/${courseId || courses[0]?.id}/${tab.key}`)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: active ? `2px solid ${token.colorPrimary}` : '2px solid transparent',
-                  color: active ? token.colorPrimary : '#666',
-                  padding: '10px 16px',
-                  fontSize: 14,
-                  cursor: 'pointer',
-                  fontWeight: active ? 600 : 400,
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap',
-                }}
+                key={item.key}
+                className={`lp2-nav-item${active ? ' active' : ''}${item.tutor ? ' tutor' : ''}`}
+                type="button"
+                onClick={() => navigate(item.path)}
               >
-                <span style={{ marginRight: 6 }}>{tab.icon}</span>
-                {tab.label}
+                <span className="lp2-nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
               </button>
             )
           })}
-        </div>
+        </nav>
 
-        <Content style={{ padding: 24, overflow: 'auto', flex: 1 }}>
+        <div className="lp2-course-section">
+          <div className="lp2-section-label">我的课程</div>
+          <div className="lp2-course-list">
+            {courses.map((course, index) => {
+              const active = isCourseRoute && course.id === courseId
+              const tone = ['purple', 'green', 'red', 'slate', 'blue'][index % 5]
+              return (
+                <button
+                  key={course.id}
+                  className={`lp2-course-item${active ? ' active' : ''}`}
+                  type="button"
+                  onClick={() => handleCourseSelect(course.id)}
+                >
+                  <span className={`lp2-course-mark ${tone}`}>{String.fromCharCode(65 + (index % 26))}</span>
+                  <span className="lp2-course-copy">
+                    <span className="lp2-course-name">{course.name}</span>
+                    <span className="lp2-course-meta">{course.teacher || '课程教师'}</span>
+                  </span>
+                  {index < 2 && <span className="lp2-course-dot" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </Sider>
+
+      <Layout className="lp2-main">
+        <Header className={`lp2-topbar ${topbarMode}`}>
+          {renderTopbar()}
+        </Header>
+
+        <Content className="lp2-content">
           <Outlet />
         </Content>
       </Layout>
+
       {updateNotice && (
         <Alert
           type={updateNotice.type}
@@ -544,14 +535,7 @@ export default function AppShell() {
               查看更新
             </Button>
           ) : undefined}
-          style={{
-            position: 'fixed',
-            left: 260,
-            right: 24,
-            bottom: 18,
-            zIndex: 1000,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-          }}
+          className="lp2-update-alert"
         />
       )}
     </Layout>

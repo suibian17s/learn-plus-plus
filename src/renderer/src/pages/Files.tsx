@@ -1,9 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Table, Button, message, Spin } from 'antd'
-import { DownloadOutlined, FolderOpenOutlined } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
+import { Button, Input, message, Select, Spin, Tag } from 'antd'
+import {
+  CloudDownloadOutlined,
+  DownloadOutlined,
+  EyeOutlined,
+  FilePdfOutlined,
+  FilePptOutlined,
+  FileTextOutlined,
+  FileZipOutlined,
+  FolderOpenOutlined,
+  PlayCircleOutlined,
+  RobotOutlined,
+  SearchOutlined,
+} from '@ant-design/icons'
 import EmptyState from '../components/EmptyState'
 import { useDownloadStore } from '../store/downloads'
 import { formatDateTime } from '../utils/time'
@@ -20,14 +31,25 @@ export default function FilesPage() {
   const { courseId } = useParams()
   const [downloads, setDownloads] = useState<Record<string, DownloadEntry>>({})
   const [downloadStates, setDownloadStates] = useState<Record<string, { downloaded: boolean; destPath: string }>>({})
-  const downloadRecords = useDownloadStore((s) => s.downloads)
-  const addDownloadRecord = useDownloadStore((s) => s.addOrUpdate)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [keyword, setKeyword] = useState('')
+  const downloadRecords = useDownloadStore((state) => state.downloads)
+  const addDownloadRecord = useDownloadStore((state) => state.addOrUpdate)
 
   const { data: files, isLoading } = useQuery({
     queryKey: ['files', courseId],
     queryFn: () => window.learn.files.list(courseId!),
     enabled: !!courseId,
   })
+
+  const visibleFiles = useMemo(() => {
+    if (!files) return []
+    const q = keyword.trim().toLowerCase()
+    if (!q) return files
+    return files.filter((file: any) => String(file.name || '').toLowerCase().includes(q))
+  }, [files, keyword])
+
+  const selectedFile = visibleFiles.find((file: any) => file.id === selectedId) || visibleFiles[0]
 
   useEffect(() => {
     const unsub = window.learn.files.onProgress((data: any) => {
@@ -57,6 +79,10 @@ export default function FilesPage() {
   useEffect(() => {
     if (!files?.length) return
 
+    if (!selectedId || !files.some((file: any) => file.id === selectedId)) {
+      setSelectedId(files[0].id)
+    }
+
     let alive = true
     Promise.all(files.map(async (file: any) => {
       const downloadName = file.downloadName || file.name
@@ -74,7 +100,7 @@ export default function FilesPage() {
     return () => {
       alive = false
     }
-  }, [files])
+  }, [files, selectedId])
 
   async function handleDownload(file: any) {
     const downloadName = file.downloadName || file.name
@@ -122,59 +148,167 @@ export default function FilesPage() {
     const state = downloadStates[downloadName]
     if (state?.downloaded) return { destPath: state.destPath }
 
-    const history = downloadRecords.find((d) => (
-      d.status === 'completed' &&
-      d.destPath &&
-      (d.fileName === record.name || d.fileName === downloadName)
+    const history = downloadRecords.find((item) => (
+      item.status === 'completed' &&
+      item.destPath &&
+      (item.fileName === record.name || item.fileName === downloadName)
     ))
     if (history?.destPath) return { destPath: history.destPath }
 
-    const current = Object.values(downloads).find((d) => (
-      d.destPath &&
-      (d.fileName === record.name || d.fileName === downloadName) &&
-      d.status === 'completed'
+    const current = Object.values(downloads).find((item) => (
+      item.destPath &&
+      (item.fileName === record.name || item.fileName === downloadName) &&
+      item.status === 'completed'
     ))
     return current?.destPath ? { destPath: current.destPath } : null
   }
 
-  const columns: ColumnsType<any> = [
-    { title: '文件名', dataIndex: 'name', key: 'name', ellipsis: true },
-    { title: '大小', dataIndex: 'size', key: 'size', width: 100, render: (s: number) => formatSize(s) },
-    { title: '上传时间', dataIndex: 'uploadTime', key: 'uploadTime', width: 180, render: (t: string) => formatDateTime(t) || '-' },
-    {
-      title: '操作', key: 'actions', width: 200,
-      render: (_: any, record: any) => {
-        const dl = downloadedFile(record)
-        return (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {dl ? (
-              <Button size="small" icon={<FolderOpenOutlined />} style={{ color: '#52C41A' }}
-                onClick={() => window.learn.files.openFolder(dl.destPath)}>
-                已下载
-              </Button>
-            ) : (
-              <Button size="small" type="primary" icon={<DownloadOutlined />}
-                onClick={() => handleDownload(record)}>
-                下载
-              </Button>
-            )}
-          </div>
-        )
-      },
-    },
-  ]
+  function fileIcon(fileName: string) {
+    const lower = fileName.toLowerCase()
+    if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) return <FilePptOutlined />
+    if (lower.endsWith('.pdf')) return <FilePdfOutlined />
+    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z')) return <FileZipOutlined />
+    if (lower.endsWith('.mp4') || lower.endsWith('.mov')) return <PlayCircleOutlined />
+    return <FileTextOutlined />
+  }
+
+  function fileTone(fileName: string) {
+    const lower = fileName.toLowerCase()
+    if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) return 'orange'
+    if (lower.endsWith('.pdf')) return 'red'
+    if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z')) return 'slate'
+    if (lower.endsWith('.mp4') || lower.endsWith('.mov')) return 'purple'
+    return 'blue'
+  }
+
+  const selectedDownload = selectedFile ? downloadedFile(selectedFile) : null
+  const selectedMeta = useMemo(() => {
+    if (!selectedFile) return null
+    return {
+      uploadTime: formatDateTime(selectedFile.uploadTime) || '2026-05-26 23:59',
+      size: formatSize(selectedFile.size),
+      source: selectedFile.publisher || selectedFile.teacher || '任课教师',
+      desc: '本章介绍课程资料中的核心概念与实践方法，可配合甘蔗 Tutor 生成摘要、重点和复习提纲。',
+    }
+  }, [selectedFile])
 
   if (isLoading) return <Spin style={{ display: 'block', margin: '40px auto' }} />
   if (!files?.length) return <EmptyState description="暂无课件" />
 
   return (
-    <Table
-      dataSource={files}
-      columns={columns}
-      rowKey="id"
-      pagination={false}
-      size="middle"
-      style={{ background: '#fff', borderRadius: 8 }}
-    />
+    <div className="lp2-files-page">
+      <div className="lp2-file-toolbar">
+        <Input prefix={<SearchOutlined />} placeholder="搜索课件" allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+        <Select
+          defaultValue="all"
+          options={[{ value: 'all', label: '全部章节' }, { value: 'chapter-3', label: '第 3 章' }]}
+        />
+        <Select
+          defaultValue="time"
+          options={[{ value: 'time', label: '发布时间' }, { value: 'name', label: '文件名' }]}
+        />
+        <Button icon={<CloudDownloadOutlined />} onClick={() => message.info('批量下载将在 v2.0 后续开发中接入')}>
+          批量下载
+        </Button>
+        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
+          甘蔗 Tutor 总结
+        </Button>
+      </div>
+
+      <div className="lp2-files-layout">
+        <section className="lp2-file-list-card">
+          {visibleFiles.map((file: any) => {
+            const dl = downloadedFile(file)
+            const active = selectedFile?.id === file.id
+            return (
+              <button
+                key={file.id}
+                type="button"
+                className={`lp2-file-row${active ? ' active' : ''}`}
+                onClick={() => setSelectedId(file.id)}
+              >
+                <span className={`lp2-file-icon ${fileTone(file.name)}`}>{fileIcon(file.name)}</span>
+                <span className="lp2-file-copy">
+                  <strong>{file.name}</strong>
+                  <small>{formatSize(file.size)} · {formatDateTime(file.uploadTime) || '-'}</small>
+                </span>
+                <span className="lp2-file-status">
+                  {dl ? <Tag color="green">已下载</Tag> : <Tag color="purple">未下载</Tag>}
+                  <span className="lp2-file-actions-inline">
+                    <button
+                      type="button"
+                      className="lp2-file-action-button"
+                      aria-label="预览课件"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        message.info('课件预览将在后续接入')
+                      }}
+                    >
+                      <EyeOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      className="lp2-file-action-button"
+                      aria-label={dl ? '打开课件' : '下载课件'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (dl) {
+                          window.learn.files.openFolder(dl.destPath)
+                          return
+                        }
+                        handleDownload(file)
+                      }}
+                    >
+                      {dl ? <FolderOpenOutlined /> : <DownloadOutlined />}
+                    </button>
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </section>
+
+        {selectedFile && selectedMeta && (
+          <aside className="lp2-file-detail-card">
+            <div className="lp2-file-detail-head">
+              <span className={`lp2-file-icon large ${fileTone(selectedFile.name)}`}>
+                {fileIcon(selectedFile.name)}
+              </span>
+              <h2>{selectedFile.name}</h2>
+            </div>
+            <div className="lp2-file-detail-meta">
+              <span>上传时间</span>
+              <strong>{selectedMeta.uploadTime}</strong>
+              <span>文件大小</span>
+              <strong>{selectedMeta.size}</strong>
+              <span>来源</span>
+              <strong>{selectedMeta.source}</strong>
+              <span>简介</span>
+              <p>{selectedMeta.desc}</p>
+            </div>
+            <div className="lp2-file-detail-actions">
+              {selectedDownload ? (
+                <>
+                  <Button
+                    type="primary"
+                    icon={<FolderOpenOutlined />}
+                    onClick={() => window.learn.files.openFolder(selectedDownload.destPath)}
+                  >
+                    打开课件
+                  </Button>
+                  <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
+                    甘蔗 Tutor 总结
+                  </Button>
+                </>
+              ) : (
+                <Button type="primary" icon={<DownloadOutlined />} onClick={() => handleDownload(selectedFile)}>
+                  下载课件
+                </Button>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
   )
 }

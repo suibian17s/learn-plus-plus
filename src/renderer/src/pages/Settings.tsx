@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Form, Input, Select, Button, Switch, Space, Divider, message, Popconfirm, Tag, Alert, Typography } from 'antd'
-import { FolderOpenOutlined, LogoutOutlined, KeyOutlined, RobotOutlined } from '@ant-design/icons'
+import { CalendarOutlined, FolderOpenOutlined, LogoutOutlined, KeyOutlined, RobotOutlined } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
 import { AI_PROVIDER_PRESETS, getAiProviderPreset } from '../../../shared/aiProviders'
 
@@ -9,7 +9,7 @@ const { Text } = Typography
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { reset } = useAuthStore()
+  const { reset, semesters, currentSemester, setSemesters, setCourses, setSelectedCourse } = useAuthStore()
   const [form] = Form.useForm()
   const [settings, setSettings] = useState<any>({})
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -83,6 +83,21 @@ export default function SettingsPage() {
     message.success('甘蔗 tutor 承诺书已重置')
   }
 
+  async function handleSemesterChange(value: string) {
+    const selected = semesters.find((s) => s.id === value)
+    if (selected) setSemesters(semesters, selected)
+
+    const coursesData: any = await window.learn.course.listCourses(value)
+    if (coursesData?.error) {
+      message.error(`加载课程失败: ${coursesData.error}`)
+      return
+    }
+
+    setCourses(coursesData)
+    setSelectedCourse(coursesData[0]?.id || null)
+    message.success('学期已切换')
+  }
+
   return (
     <div style={{ maxWidth: 720 }}>
       <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 24 }}>设置</h2>
@@ -100,6 +115,21 @@ export default function SettingsPage() {
           </Form.Item>
           <div style={{ color: '#888', fontSize: 13 }}>
             开机自启动会默认在后台运行，可从 Windows 右下角托盘图标打开或退出。
+          </div>
+        </Card>
+
+        <Card title={<Space><CalendarOutlined /> 学期设置</Space>} size="small">
+          <Form.Item label="当前学期" style={{ marginBottom: 8 }}>
+            <Select
+              value={currentSemester?.id}
+              onChange={handleSemesterChange}
+              placeholder="选择学期"
+              style={{ maxWidth: 320 }}
+              options={semesters.map((s) => ({ value: s.id, label: s.name }))}
+            />
+          </Form.Item>
+          <div style={{ color: '#888', fontSize: 13 }}>
+            学期切换会重新加载左侧课程列表。
           </div>
         </Card>
 

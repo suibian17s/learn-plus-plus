@@ -83,6 +83,11 @@ export interface LearnApi {
       releasesUrl?: string
       error?: string
     }>
+    controlWindow: (command: 'minimize' | 'toggle-maximize' | 'close') => void
+    minimizeWindow: () => Promise<void>
+    toggleMaximizeWindow: () => Promise<void>
+    closeWindow: () => Promise<void>
+    quitWindow: () => Promise<void>
     onResume: (cb: () => void) => () => void
   }
   onAutoLoginResult: (cb: (loggedIn: boolean) => void) => () => void
