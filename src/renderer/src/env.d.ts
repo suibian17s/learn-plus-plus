@@ -71,7 +71,9 @@ interface LearnApi {
     abort: (sessionId: string) => Promise<void>
     hasAcknowledgedRisk: () => Promise<boolean>
     acknowledgeRisk: () => Promise<{ ok: boolean }>
-    onChunk: (cb: (data: { sessionId: string; delta: string }) => void) => () => void
+    tutorChat: (params: { messages: { role: string; content: string }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string }) => Promise<{ finishReason: string; error?: string; messageCount: number }>
+    tutorAbort: (sessionId: string) => Promise<void>
+    onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => () => void
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
   }
   settings: {
@@ -95,8 +97,8 @@ interface LearnApi {
   mail: {
     login: () => Promise<{ ok: boolean }>
     status: () => Promise<{ loggedIn: boolean }>
-    list: (folder: string) => Promise<{ mails: { id: string; subject: string; from: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
-    get: (mailId: string) => Promise<{ id: string; subject: string; from: string; date: string; preview: string; starred: boolean; read: boolean; body: string; attachments: { name: string; url: string }[] } | null>
+    list: (folder: string) => Promise<{ mails: { id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
+    get: (mailId: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean; body: string; attachments: { name: string; url: string }[] } | null>
     star: (mailId: string, starred: boolean) => Promise<{ ok: boolean }>
     delete: (mailId: string) => Promise<{ ok: boolean }>
   }

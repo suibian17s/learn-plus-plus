@@ -58,7 +58,9 @@ export interface LearnApi {
     abort: (sessionId: string) => Promise<void>
     hasAcknowledgedRisk: () => Promise<boolean>
     acknowledgeRisk: () => Promise<{ ok: boolean }>
-    onChunk: (cb: (data: { sessionId: string; delta: string }) => void) => () => void
+    tutorChat: (params: { messages: { role: string; content: string }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string }) => Promise<{ finishReason: string; error?: string; messageCount: number }>
+    tutorAbort: (sessionId: string) => Promise<void>
+    onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => () => void
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
   }
   settings: {

@@ -70,7 +70,7 @@ export default function HomeworkAutoComplete() {
   // Listen for stream chunks
   useEffect(() => {
     const unsubChunk = window.learn.hwai.onChunk(({ sessionId: sid, delta }) => {
-      if (sid === sessionId) {
+      if (sid === sessionId && delta) {
         appendStreamText(delta)
       }
     })

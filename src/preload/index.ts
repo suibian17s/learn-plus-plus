@@ -75,7 +75,10 @@ const api = {
     abort: (sessionId: string) => ipcRenderer.invoke('hwai:abort', sessionId),
     hasAcknowledgedRisk: () => ipcRenderer.invoke('hwai:has-acknowledged-risk'),
     acknowledgeRisk: () => ipcRenderer.invoke('hwai:acknowledge-risk'),
-    onChunk: (cb: (data: { sessionId: string; delta: string }) => void) => {
+    tutorChat: (params: { messages: { role: string; content: string }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string }) =>
+      ipcRenderer.invoke('tutor:chat', params),
+    tutorAbort: (sessionId: string) => ipcRenderer.invoke('tutor:abort', sessionId),
+    onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data)
       ipcRenderer.on('hwai:generate-chunk', handler)
       return () => ipcRenderer.removeListener('hwai:generate-chunk', handler)
