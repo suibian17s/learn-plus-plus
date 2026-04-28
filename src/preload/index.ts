@@ -85,6 +85,14 @@ const api = {
     setApiKey: (key: string, provider?: string) => ipcRenderer.invoke('settings:setApiKey', key, provider),
     hasApiKey: (provider?: string) => ipcRenderer.invoke('settings:hasApiKey', provider),
   },
+  stats: {
+    computeDashboard: (payload: any) => ipcRenderer.invoke('stats:computeDashboard', payload),
+  },
+  search: {
+    query: (q: string, typeFilter?: string) => ipcRenderer.invoke('search:query', q, typeFilter),
+    indexItems: (type: string, items: any[], targetTab: string) =>
+      ipcRenderer.invoke('search:indexItems', type, items, targetTab),
+  },
   app: {
     info: () => ipcRenderer.invoke('app:info'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),

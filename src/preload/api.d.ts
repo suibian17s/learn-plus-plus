@@ -63,6 +63,18 @@ export interface LearnApi {
     setApiKey: (key: string, provider?: string) => Promise<{ ok: boolean }>
     hasApiKey: (provider?: string) => Promise<boolean>
   }
+  stats: {
+    computeDashboard: (payload: {
+      courses: { id: string; name: string; teacher: string }[]
+      homeworksByCourse: Record<string, any[]>
+      noticesByCourse: Record<string, any[]>
+      discussionsByCourse: Record<string, any[]>
+    }) => Promise<any>
+  }
+  search: {
+    query: (q: string, typeFilter?: string) => Promise<any[]>
+    indexItems: (type: string, items: any[], targetTab: string) => Promise<{ ok: boolean }>
+  }
   app: {
     info: () => Promise<{
       name: string
