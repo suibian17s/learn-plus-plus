@@ -33,6 +33,8 @@ export default function FilesPage() {
   const [downloadStates, setDownloadStates] = useState<Record<string, { downloaded: boolean; destPath: string }>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
+  const [chapterFilter, setChapterFilter] = useState('all')
+  const [sortOrder, setSortOrder] = useState('time-desc')
   const downloadRecords = useDownloadStore((state) => state.downloads)
   const addDownloadRecord = useDownloadStore((state) => state.addOrUpdate)
 
@@ -42,14 +44,39 @@ export default function FilesPage() {
     enabled: !!courseId,
   })
 
-  const visibleFiles = useMemo(() => {
+  const chapters = useMemo(() => {
     if (!files) return []
-    const q = keyword.trim().toLowerCase()
-    if (!q) return files
-    return files.filter((file: any) => String(file.name || '').toLowerCase().includes(q))
-  }, [files, keyword])
+    return [...new Set(files.map((f: any) => f.chapter || '未分类'))]
+  }, [files])
 
-  const selectedFile = visibleFiles.find((file: any) => file.id === selectedId) || visibleFiles[0]
+  const filteredFiles = useMemo(() => {
+    if (!files) return []
+    let result = [...files]
+    const q = keyword.trim().toLowerCase()
+    if (q) {
+      result = result.filter((file: any) => String(file.name || '').toLowerCase().includes(q))
+    }
+    if (chapterFilter !== 'all') {
+      result = result.filter((file: any) => (file.chapter || '未分类') === chapterFilter)
+    }
+    result.sort((a: any, b: any) => {
+      switch (sortOrder) {
+        case 'time-asc':
+          return new Date(a.uploadTime || 0).getTime() - new Date(b.uploadTime || 0).getTime()
+        case 'time-desc':
+          return new Date(b.uploadTime || 0).getTime() - new Date(a.uploadTime || 0).getTime()
+        case 'name-asc':
+          return String(a.name || '').localeCompare(String(b.name || ''))
+        case 'name-desc':
+          return String(b.name || '').localeCompare(String(a.name || ''))
+        default:
+          return 0
+      }
+    })
+    return result
+  }, [files, keyword, chapterFilter, sortOrder])
+
+  const selectedFile = filteredFiles.find((file: any) => file.id === selectedId) || filteredFiles[0]
 
   useEffect(() => {
     const unsub = window.learn.files.onProgress((data: any) => {
@@ -137,6 +164,79 @@ export default function FilesPage() {
     }
   }
 
+  async function handlePreview(file: any) {
+    message.loading({ content: '加载预览...', key: 'preview' })
+    try {
+      const result = await window.learn.files.previewOpen(
+        file.fileId || file.id,
+        file.downloadName || file.name,
+        file.downloadUrl
+      )
+      message.destroy('preview')
+      if (result.method === 'pdf' || result.method === 'image') {
+        window.learn.files.openFile(result.content)
+      } else {
+        message.info(result.content)
+      }
+    } catch {
+      message.destroy('preview')
+      message.error('预览加载失败')
+    }
+  }
+
+  async function handleBatchDownload() {
+    if (!files?.length) return
+    message.loading({ content: '批量下载中...', key: 'batch' })
+    const items = files.map((f: any) => ({
+      fileId: f.fileId || f.id,
+      fileName: f.downloadName || f.name,
+      url: f.downloadUrl,
+    }))
+    try {
+      const results = await window.learn.files.batchDownload(items)
+      const ok = results.filter((r) => r.success).length
+      const fail = results.filter((r) => !r.success).length
+      message.destroy('batch')
+      if (fail > 0) {
+        message.warning(`批量下载完成: ${ok} 成功, ${fail} 失败`)
+      } else {
+        message.success(`批量下载完成: ${ok} 个文件`)
+      }
+      // Update download states for the batch results
+      setDownloadStates((prev) => {
+        const next = { ...prev }
+        for (const r of results) {
+          const item = files.find((f: any) => (f.fileId || f.id) === r.fileId)
+          if (item && r.success && r.destPath) {
+            const downloadName = item.downloadName || item.name
+            next[downloadName] = { downloaded: true, destPath: r.destPath }
+          }
+        }
+        return next
+      })
+      // Update download records
+      for (const r of results) {
+        if (r.success && r.destPath) {
+          const item = files.find((f: any) => (f.fileId || f.id) === r.fileId)
+          if (item) {
+            addDownloadRecord({
+              id: `${r.fileId}-batch-${Date.now()}`,
+              fileName: item.downloadName || item.name,
+              loaded: 0,
+              total: 0,
+              status: 'completed',
+              destPath: r.destPath,
+              time: Date.now(),
+            })
+          }
+        }
+      }
+    } catch {
+      message.destroy('batch')
+      message.error('批量下载失败')
+    }
+  }
+
   function formatSize(bytes: number) {
     if (!bytes) return '-'
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
@@ -200,14 +300,21 @@ export default function FilesPage() {
       <div className="lp2-file-toolbar">
         <Input prefix={<SearchOutlined />} placeholder="搜索课件" allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} />
         <Select
-          defaultValue="all"
-          options={[{ value: 'all', label: '全部章节' }, { value: 'chapter-3', label: '第 3 章' }]}
+          value={chapterFilter}
+          onChange={setChapterFilter}
+          options={[{ value: 'all', label: '全部章节' }, ...chapters.map((c) => ({ value: c, label: c }))]}
         />
         <Select
-          defaultValue="time"
-          options={[{ value: 'time', label: '发布时间' }, { value: 'name', label: '文件名' }]}
+          value={sortOrder}
+          onChange={setSortOrder}
+          options={[
+            { value: 'time-desc', label: '最新优先' },
+            { value: 'time-asc', label: '最早优先' },
+            { value: 'name-asc', label: '文件名 A-Z' },
+            { value: 'name-desc', label: '文件名 Z-A' },
+          ]}
         />
-        <Button icon={<CloudDownloadOutlined />} onClick={() => message.info('批量下载将在 v2.0 后续开发中接入')}>
+        <Button icon={<CloudDownloadOutlined />} onClick={handleBatchDownload}>
           批量下载
         </Button>
         <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
@@ -217,7 +324,7 @@ export default function FilesPage() {
 
       <div className="lp2-files-layout">
         <section className="lp2-file-list-card">
-          {visibleFiles.map((file: any) => {
+          {filteredFiles.map((file: any) => {
             const dl = downloadedFile(file)
             const active = selectedFile?.id === file.id
             return (
@@ -241,7 +348,7 @@ export default function FilesPage() {
                       aria-label="预览课件"
                       onClick={(event) => {
                         event.stopPropagation()
-                        message.info('课件预览将在后续接入')
+                        handlePreview(file)
                       }}
                     >
                       <EyeOutlined />
@@ -253,7 +360,7 @@ export default function FilesPage() {
                       onClick={(event) => {
                         event.stopPropagation()
                         if (dl) {
-                          window.learn.files.openFolder(dl.destPath)
+                          window.learn.files.openFile(dl.destPath)
                           return
                         }
                         handleDownload(file)
@@ -292,7 +399,7 @@ export default function FilesPage() {
                   <Button
                     type="primary"
                     icon={<FolderOpenOutlined />}
-                    onClick={() => window.learn.files.openFolder(selectedDownload.destPath)}
+                    onClick={() => window.learn.files.openFile(selectedDownload.destPath)}
                   >
                     打开课件
                   </Button>

@@ -195,3 +195,57 @@ export async function complete(options: AiCompleteOptions): Promise<string> {
 export async function completeMultimodal(options: AiMultimodalOptions): Promise<string> {
   return complete(options)
 }
+
+export interface CompleteNonStreamingOptions {
+  system: string
+  messages: AiMessage[]
+  signal?: AbortSignal
+  maxTokens?: number
+  tools?: any[]
+}
+
+export async function completeNonStreaming(options: CompleteNonStreamingOptions): Promise<string> {
+  const { provider, model, apiKey, endpoint, apiFormat } = loadSettings()
+  if (!apiKey) throw new Error('AI API key not configured')
+  if (!endpoint) throw new Error('AI API endpoint not configured')
+
+  const headers = buildHeaders(apiKey, provider, apiFormat)
+  const maxTokens = options.maxTokens || 4096
+
+  // Build body with non-streaming and optional tools
+  const fullMessages: any[] = [
+    { role: 'system', content: options.system },
+    ...options.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...((m as any).tool_calls ? { tool_calls: (m as any).tool_calls } : {}),
+      ...((m as any).tool_call_id ? { tool_call_id: (m as any).tool_call_id } : {}),
+    })),
+  ]
+
+  const bodyObj: any = {
+    model,
+    max_tokens: maxTokens,
+    messages: fullMessages,
+    stream: false,
+  }
+
+  if (options.tools?.length) {
+    bodyObj.tools = options.tools
+    bodyObj.tool_choice = 'auto'
+  }
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(bodyObj),
+    signal: options.signal,
+  })
+
+  if (!resp.ok) {
+    const text = await resp.text()
+    throw new Error(`AI API error ${resp.status}: ${text}`)
+  }
+
+  return resp.text()
+}

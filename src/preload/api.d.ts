@@ -21,9 +21,13 @@ export interface LearnApi {
     list: (courseId: string) => Promise<any[]>
     download: (fileId: string, fileName: string, url: string) => Promise<{ downloadId: string; destPath: string }>
     openFolder: (filePath: string) => Promise<void>
+    openFile: (filePath: string) => Promise<void>
     selectDirectory: () => Promise<string | null>
     exists: (filePath: string) => Promise<boolean>
     downloadState: (fileName: string) => Promise<{ downloaded: boolean; destPath: string }>
+    preview: (fileId: string, fileName: string, url: string) => Promise<{ tempPath: string; fileType: string }>
+    previewOpen: (fileId: string, fileName: string, url: string) => Promise<{ method: string; content: string; fileName: string }>
+    batchDownload: (items: { fileId: string; fileName: string; url: string }[]) => Promise<{ fileId: string; success: boolean; destPath?: string; error?: string }[]>
     onProgress: (cb: (data: any) => void) => () => void
   }
   hw: {
@@ -74,6 +78,14 @@ export interface LearnApi {
   search: {
     query: (q: string, typeFilter?: string) => Promise<any[]>
     indexItems: (type: string, items: any[], targetTab: string) => Promise<{ ok: boolean }>
+  }
+  mail: {
+    login: () => Promise<{ ok: boolean }>
+    status: () => Promise<{ loggedIn: boolean }>
+    list: (folder: string) => Promise<{ mails: { id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
+    get: (mailId: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean; body: string; attachments: { name: string; url: string }[] } | null>
+    star: (mailId: string, starred: boolean) => Promise<{ ok: boolean }>
+    delete: (mailId: string) => Promise<{ ok: boolean }>
   }
   app: {
     info: () => Promise<{

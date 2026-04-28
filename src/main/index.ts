@@ -11,6 +11,7 @@ import { registerSettingsIpc } from './ipc/settings'
 import { registerAiIpc } from './ipc/ai'
 import { registerAppIpc } from './ipc/app'
 import { registerStatsIpc } from './ipc/stats'
+import { registerMailIpc } from './ipc/mail'
 import { loadCreds } from './services/session-store'
 import {
   login,
@@ -232,6 +233,7 @@ app.whenReady().then(async () => {
   registerAiIpc()
   registerAppIpc()
   registerStatsIpc()
+  registerMailIpc()
 
   mainWindow = createWindow()
   createTray()

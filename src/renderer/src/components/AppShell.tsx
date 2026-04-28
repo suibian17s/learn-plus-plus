@@ -63,6 +63,7 @@ export default function AppShell() {
   const [searchValue, setSearchValue] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)
+  const [mailSubOpen, setMailSubOpen] = useState(false)
 
   const pathParts = location.pathname.split('/')
   const isCourseRoute = location.pathname.startsWith('/course/')
@@ -515,13 +516,68 @@ export default function AppShell() {
           {globalNav.map((item) => {
             const active = item.path === '/'
               ? location.pathname === '/'
-              : location.pathname.startsWith(item.path) || (item.key === 'tutor' && currentTab === 'tutor')
+              : item.key === 'tutor'
+                ? (location.pathname.startsWith(item.path) || currentTab === 'tutor')
+                : item.key === 'mailbox'
+                  ? (location.pathname.startsWith(item.path) && !mailSubOpen)
+                  : location.pathname.startsWith(item.path)
+
+            if (item.key === 'mailbox') {
+              const isMailActive = location.pathname.startsWith('/mailbox')
+              return (
+                <div key="mailbox" className="lp2-mail-nav-group">
+                  <button
+                    className={`lp2-nav-item${isMailActive ? ' active' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      if (mailSubOpen) {
+                        setMailSubOpen(false)
+                      } else {
+                        setMailSubOpen(true)
+                        navigate('/mailbox?folder=inbox')
+                      }
+                    }}
+                  >
+                    <span className="lp2-nav-icon">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                  <div className={`mail-submenu${mailSubOpen ? ' open' : ''}`}>
+                    {([
+                      { key: 'inbox', label: '收件箱' },
+                      { key: 'drafts', label: '草稿箱' },
+                      { key: 'sent', label: '已发送' },
+                      { key: 'trash', label: '已删除' },
+                    ] as const).map((folder) => {
+                      const params = new URLSearchParams(location.search)
+                      const activeFolder = location.pathname.startsWith('/mailbox') && params.get('folder') === folder.key
+                      return (
+                        <button
+                          key={folder.key}
+                          className={`mail-submenu-item${activeFolder ? ' active' : ''}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate(`/mailbox?folder=${folder.key}`)
+                          }}
+                        >
+                          {folder.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            }
+
             return (
               <button
                 key={item.key}
                 className={`lp2-nav-item${active ? ' active' : ''}${item.tutor ? ' tutor' : ''}`}
                 type="button"
-                onClick={() => navigate(item.path)}
+                onClick={() => {
+                  if (item.key === 'mailbox') return
+                  navigate(item.path)
+                }}
               >
                 <span className="lp2-nav-icon">{item.icon}</span>
                 <span>{item.label}</span>

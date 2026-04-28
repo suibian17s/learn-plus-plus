@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Popconfirm, Table, Tag, Progress, Empty, Typography } from 'antd'
+import { Button, Popconfirm, Table, Tag, Progress, Empty, Typography, Tabs } from 'antd'
 import {
   ArrowLeftOutlined,
   DownloadOutlined,
@@ -9,6 +9,7 @@ import {
   DeleteOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import { useDownloadStore } from '../store/downloads'
 
@@ -17,6 +18,7 @@ const { Text } = Typography
 export default function DownloadsPage() {
   const navigate = useNavigate()
   const { downloads, clearAll, addOrUpdate, remove } = useDownloadStore()
+  const [activeTab, setActiveTab] = useState('downloading')
 
   // Listen for download progress globally
   useEffect(() => {
@@ -34,12 +36,24 @@ export default function DownloadsPage() {
     return () => { unsub() }
   }, [addOrUpdate])
 
+  const sorted = [...downloads].sort((a, b) => b.time - a.time)
+
+  const downloadingItems = sorted.filter((d) => d.status === 'downloading')
+  const completedItems = sorted.filter((d) => d.status === 'completed')
+  const failedItems = sorted.filter((d) => d.status === 'error')
+
+  function handleRetry(item: { fileName: string }) {
+    window.learn.files.openFolder('')
+    // Note: We don't have the download URL stored, so we can't truly retry.
+    // Direct the user back to the course files page.
+  }
+
   const columns = [
     {
       title: '文件名',
       dataIndex: 'fileName',
       key: 'fileName',
-      render: (name: string, r: any) => (
+      render: (name: string) => (
         <span style={{ fontSize: 13 }}>
           <FileOutlined style={{ marginRight: 8, color: '#999' }} />
           {name || '(未知)'}
@@ -50,7 +64,7 @@ export default function DownloadsPage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 180,
+      width: 140,
       render: (_: any, r: any) => {
         if (r.status === 'completed') return <Tag color="success" icon={<CheckCircleOutlined />}>已完成</Tag>
         if (r.status === 'error') return <Tag color="error" icon={<CloseCircleOutlined />}>失败</Tag>
@@ -77,18 +91,38 @@ export default function DownloadsPage() {
     {
       title: '操作',
       key: 'action',
-      width: 190,
+      width: 220,
       render: (_: any, r: any) => {
         return (
           <div style={{ display: 'flex', gap: 8 }}>
             {r.status === 'completed' && r.destPath && (
+              <>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FileOutlined />}
+                  onClick={() => window.learn.files.openFile(r.destPath!)}
+                >
+                  打开文件
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FolderOpenOutlined />}
+                  onClick={() => window.learn.files.openFolder(r.destPath!)}
+                >
+                  打开位置
+                </Button>
+              </>
+            )}
+            {r.status === 'error' && (
               <Button
                 type="link"
                 size="small"
-                icon={<FolderOpenOutlined />}
-                onClick={() => window.learn.files.openFolder(r.destPath!)}
+                icon={<ReloadOutlined />}
+                onClick={() => handleRetry(r)}
               >
-                打开位置
+                重试
               </Button>
             )}
             <Popconfirm
@@ -107,8 +141,56 @@ export default function DownloadsPage() {
     },
   ]
 
-  const sorted = [...downloads].sort((a, b) => b.time - a.time)
-  const activeCount = downloads.filter((d) => d.status === 'downloading').length
+  const tabItems = [
+    {
+      key: 'downloading',
+      label: `进行中${downloadingItems.length > 0 ? ` (${downloadingItems.length})` : ''}`,
+      children: downloadingItems.length === 0 ? (
+        <Empty description="暂无下载中的任务" />
+      ) : (
+        <Table
+          dataSource={downloadingItems}
+          columns={columns}
+          rowKey="id"
+          size="middle"
+          pagination={false}
+          style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}
+        />
+      ),
+    },
+    {
+      key: 'completed',
+      label: `已完成 (${completedItems.length})`,
+      children: completedItems.length === 0 ? (
+        <Empty description="暂无已完成的下载" />
+      ) : (
+        <Table
+          dataSource={completedItems}
+          columns={columns}
+          rowKey="id"
+          size="middle"
+          pagination={false}
+          style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}
+        />
+      ),
+    },
+    {
+      key: 'failed',
+      label: `失败${failedItems.length > 0 ? ` (${failedItems.length})` : ''}`,
+      children: failedItems.length === 0 ? (
+        <Empty description="暂无失败的下载" />
+      ) : (
+        <Table
+          dataSource={failedItems}
+          columns={columns}
+          rowKey="id"
+          size="middle"
+          pagination={false}
+          style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}
+        />
+      ),
+    },
+  ]
 
   return (
     <div style={{ maxWidth: 900 }}>
@@ -132,22 +214,12 @@ export default function DownloadsPage() {
       {sorted.length === 0 ? (
         <Empty description="暂无下载任务" />
       ) : (
-        <>
-          {activeCount > 0 && (
-            <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
-              <DownloadOutlined style={{ marginRight: 4 }} />
-              {activeCount} 个文件正在下载
-            </Text>
-          )}
-          <Table
-            dataSource={sorted}
-            columns={columns}
-            rowKey="id"
-            size="middle"
-            pagination={false}
-            style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}
-          />
-        </>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={tabItems}
+          style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0', padding: '0 16px' }}
+        />
       )}
     </div>
   )

@@ -25,9 +25,16 @@ const api = {
     download: (fileId: string, fileName: string, url: string) =>
       ipcRenderer.invoke('files:download', fileId, fileName, url),
     openFolder: (filePath: string) => ipcRenderer.invoke('files:openFolder', filePath),
+    openFile: (filePath: string) => ipcRenderer.invoke('files:openFile', filePath),
     selectDirectory: () => ipcRenderer.invoke('files:selectDirectory'),
     exists: (filePath: string) => ipcRenderer.invoke('files:exists', filePath),
     downloadState: (fileName: string) => ipcRenderer.invoke('files:downloadState', fileName),
+    preview: (fileId: string, fileName: string, url: string) =>
+      ipcRenderer.invoke('files:preview', fileId, fileName, url),
+    previewOpen: (fileId: string, fileName: string, url: string) =>
+      ipcRenderer.invoke('files:previewOpen', fileId, fileName, url),
+    batchDownload: (items: { fileId: string; fileName: string; url: string }[]) =>
+      ipcRenderer.invoke('files:batchDownload', items),
     onProgress: (cb: (data: any) => void) => {
       const handler = (_e: any, data: any) => cb(data)
       ipcRenderer.on('files:progress', handler)
@@ -92,6 +99,15 @@ const api = {
     query: (q: string, typeFilter?: string) => ipcRenderer.invoke('search:query', q, typeFilter),
     indexItems: (type: string, items: any[], targetTab: string) =>
       ipcRenderer.invoke('search:indexItems', type, items, targetTab),
+  },
+  mail: {
+    login: () => ipcRenderer.invoke('mail:login'),
+    status: () => ipcRenderer.invoke('mail:status'),
+    list: (folder: string) => ipcRenderer.invoke('mail:list', folder),
+    get: (mailId: string) => ipcRenderer.invoke('mail:get', mailId),
+    star: (mailId: string, starred: boolean) =>
+      ipcRenderer.invoke('mail:star', mailId, starred),
+    delete: (mailId: string) => ipcRenderer.invoke('mail:delete', mailId),
   },
   app: {
     info: () => ipcRenderer.invoke('app:info'),

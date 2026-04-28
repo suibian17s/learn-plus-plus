@@ -6420,3 +6420,45 @@ html.lp2-window-closing .login-v2-frame {
   text-align: center;
   color: #999;
 }
+
+/* ── Mail sidebar submenu ─────────────────────────────────────── */
+.lp2-mail-nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.mail-submenu {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  padding-left: 24px;
+}
+
+.mail-submenu.open {
+  max-height: 180px;
+}
+
+.mail-submenu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+  font-size: 13px;
+  color: #555;
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+}
+
+.mail-submenu-item:hover {
+  background: #F0F5E8;
+  color: #4F8A10;
+}
+
+.mail-submenu-item.active {
+  background: #E8F5E0;
+  color: #3C7A08;
+  font-weight: 600;
+}

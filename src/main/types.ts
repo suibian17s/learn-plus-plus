@@ -102,6 +102,7 @@ export interface AppSettings {
   hasApiKey?: boolean
   launchAtStartup?: boolean
   aiAutoCompleteAcknowledged: boolean
+  tutorStyle?: 'cute' | 'serious'
 }
 
 // AI homework types
