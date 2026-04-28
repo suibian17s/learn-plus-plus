@@ -1,3 +1,102 @@
+/* ── Global non-linear animation variables ─────────────────────── */
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --anim-duration-fast: 0.15s;
+  --anim-duration-normal: 0.3s;
+  --anim-duration-slow: 0.5s;
+}
+
+/* Global non-linear animation application */
+button, .ant-btn, .lp2-card, .ant-modal, .ant-drawer {
+  transition-timing-function: var(--ease-out);
+}
+
+/* Window controls animation */
+.window-control-btn {
+  transition: all 0.25s var(--ease-out);
+}
+
+.window-control-btn:hover {
+  transform: scale(1.05);
+}
+
+.window-control-btn.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* Sidebar transitions */
+.lp2-sidebar-nav-item,
+.lp2-course-item {
+  transition: all var(--anim-duration-normal) var(--ease-out);
+}
+
+/* Card hover */
+.lp2-card {
+  transition: transform var(--anim-duration-fast) var(--ease-out),
+              box-shadow var(--anim-duration-fast) var(--ease-out);
+}
+
+.lp2-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(107, 70, 193, 0.12);
+}
+
+/* Modal/drawer enter animation override */
+.ant-modal-enter,
+.ant-drawer-enter,
+.ant-modal-appear,
+.ant-drawer-appear {
+  animation-timing-function: var(--ease-out) !important;
+}
+
+/* Login page element entrance */
+.lp2-login .lp2-hero-copy h1,
+.lp2-login .lp2-hero-copy p {
+  animation: fadeSlideIn 0.6s var(--ease-out) both;
+}
+
+.lp2-login .lp2-hero-copy h1 { animation-delay: 0.1s; }
+.lp2-login .lp2-hero-copy p { animation-delay: 0.2s; }
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mail submenu animation (already has transition, ensure it uses ease var) */
+.mail-submenu {
+  transition: max-height 0.35s var(--ease-out) !important;
+}
+
+/* Tutor message appear */
+.lp2-tutor-message {
+  animation: messageIn 0.3s var(--ease-out) both;
+}
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Image no-drag global rule */
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* No-drag on interactive elements */
+button, input, select, textarea, a, .ant-btn, .ant-select, .ant-input {
+  -webkit-app-region: no-drag;
+}
+
+/* Drag region only on specific areas */
+.lp2-header, .lp2-sidebar {
+  -webkit-app-region: drag;
+}
+
 .login-gradient {
   background: linear-gradient(135deg, #660874 0%, #7B2D8E 40%, #9B4DCA 100%);
   min-height: 100vh;
@@ -2448,6 +2547,7 @@ body {
   box-shadow: 0 24px 70px rgba(107, 70, 193, 0.14);
 }
 
+/* NOTE: Base layout styles (.lp2-header, .lp2-sidebar, .lp2-main) extracted to layout.css */
 .lp2-sidebar {
   background: rgba(255, 255, 255, 0.72) !important;
   border-right: 1px solid rgba(232, 225, 245, 0.9);
@@ -3950,6 +4050,7 @@ body,
   overflow: hidden;
 }
 
+/* NOTE: Base window controls styles extracted to window-controls.css */
 .lp2-window-controls {
   position: fixed;
   top: 12px;

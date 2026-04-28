@@ -1,5 +1,5 @@
+import React, { useEffect, useRef } from 'react'
 import type { MouseEvent, PointerEvent } from 'react'
-import { useEffect, useRef } from 'react'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons'
 
 type WindowAction = 'minimize' | 'toggle-maximize' | 'close'
@@ -10,7 +10,7 @@ interface WindowControlsProps {
 
 export default function WindowControls({ quitOnClose = false }: WindowControlsProps) {
   const closeTimer = useRef<number | null>(null)
-  const lastAction = useRef<{ action: WindowAction; time: number } | null>(null)
+  const lastClickRef = useRef(0)
   const controlsRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -44,33 +44,31 @@ export default function WindowControls({ quitOnClose = false }: WindowControlsPr
   }, [quitOnClose])
 
   function runAction(action: WindowAction) {
-    const now = Date.now()
-    if (lastAction.current && lastAction.current.action === action && now - lastAction.current.time < 260) {
-      return
-    }
-    lastAction.current = { action, time: now }
+    try {
+      if (action === 'close') {
+        if (closeTimer.current) return
+        document.documentElement.classList.add('lp2-window-closing')
+        closeTimer.current = window.setTimeout(() => {
+          const closeTask = quitOnClose ? window.learn.app.quitWindow() : window.learn.app.closeWindow()
+          Promise.resolve(closeTask).finally(() => {
+            window.setTimeout(() => {
+              document.documentElement.classList.remove('lp2-window-closing')
+              closeTimer.current = null
+            }, 260)
+          })
+        }, 220)
+        return
+      }
 
-    if (action === 'close') {
-      if (closeTimer.current) return
-      document.documentElement.classList.add('lp2-window-closing')
-      closeTimer.current = window.setTimeout(() => {
-        const closeTask = quitOnClose ? window.learn.app.quitWindow() : window.learn.app.closeWindow()
-        Promise.resolve(closeTask).finally(() => {
-          window.setTimeout(() => {
-            document.documentElement.classList.remove('lp2-window-closing')
-            closeTimer.current = null
-          }, 260)
-        })
-      }, 220)
-      return
-    }
+      if (action === 'minimize') {
+        window.learn.app.minimizeWindow()
+        return
+      }
 
-    if (action === 'minimize') {
-      window.learn.app.minimizeWindow()
-      return
+      window.learn.app.toggleMaximizeWindow()
+    } catch {
+      // Silently ignore errors from rapid clicks or destroyed windows
     }
-
-    window.learn.app.toggleMaximizeWindow()
   }
 
   function handlePointerDown(event: PointerEvent<HTMLButtonElement>, action: WindowAction) {
@@ -86,20 +84,33 @@ export default function WindowControls({ quitOnClose = false }: WindowControlsPr
     runAction(action)
   }
 
-  function suppressClick(event: MouseEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    event.stopPropagation()
+  function createDebouncedClick(action: WindowAction) {
+    return (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const now = Date.now()
+      if (now - lastClickRef.current < 200) return
+      lastClickRef.current = now
+      runAction(action)
+    }
   }
 
   return (
-    <div ref={controlsRef} className="lp2-window-controls" role="group" aria-label="Window controls">
+    <div
+      ref={controlsRef}
+      className="lp2-window-controls"
+      role="group"
+      aria-label="Window controls"
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+    >
       <button
         type="button"
         aria-label="Minimize"
         data-window-action="minimize"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         onPointerDown={(event) => handlePointerDown(event, 'minimize')}
         onMouseDown={(event) => handleMouseDown(event, 'minimize')}
-        onClick={suppressClick}
+        onClick={createDebouncedClick('minimize')}
       >
         <MinusOutlined />
       </button>
@@ -107,9 +118,10 @@ export default function WindowControls({ quitOnClose = false }: WindowControlsPr
         type="button"
         aria-label="Maximize or restore"
         data-window-action="toggle-maximize"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         onPointerDown={(event) => handlePointerDown(event, 'toggle-maximize')}
         onMouseDown={(event) => handleMouseDown(event, 'toggle-maximize')}
-        onClick={suppressClick}
+        onClick={createDebouncedClick('toggle-maximize')}
       >
         <BorderOutlined />
       </button>
@@ -118,9 +130,10 @@ export default function WindowControls({ quitOnClose = false }: WindowControlsPr
         aria-label="Close"
         className="close"
         data-window-action="close"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         onPointerDown={(event) => handlePointerDown(event, 'close')}
         onMouseDown={(event) => handleMouseDown(event, 'close')}
-        onClick={suppressClick}
+        onClick={createDebouncedClick('close')}
       >
         <CloseOutlined />
       </button>

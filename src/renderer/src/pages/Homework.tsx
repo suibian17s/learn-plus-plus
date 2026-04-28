@@ -115,12 +115,9 @@ export default function HomeworkPage() {
 
     return (
       <List.Item
+        className="lp2-card"
         style={{
-          background: '#fff',
-          borderRadius: 8,
-          padding: '16px 20px',
           marginBottom: 10,
-          border: '1px solid #f0f0f0',
           cursor: 'pointer',
           opacity: hw.status !== '未提交' ? 0.55 : 1,
         }}

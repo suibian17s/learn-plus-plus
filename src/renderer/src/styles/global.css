@@ -1,3 +1,6 @@
+@import './window-controls.css';
+@import './layout.css';
+
 * {
   margin: 0;
   padding: 0;

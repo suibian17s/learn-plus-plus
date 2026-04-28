@@ -149,19 +149,26 @@ export function registerAppIpc(): void {
     runWindowCommand(event.sender, command)
   })
 
-  ipcMain.handle('window:minimize', (event) => {
-    return runWindowCommand(event.sender, 'minimize')
+  ipcMain.handle('window:minimize', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win && !win.isDestroyed()) win.minimize()
   })
 
-  ipcMain.handle('window:toggle-maximize', (event) => {
-    return runWindowCommand(event.sender, 'toggle-maximize')
+  ipcMain.handle('window:toggle-maximize', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win || win.isDestroyed()) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
   })
 
-  ipcMain.handle('window:close', (event) => {
-    return runWindowCommand(event.sender, 'close')
+  ipcMain.handle('window:close', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win && !win.isDestroyed()) win.close()
   })
 
-  ipcMain.handle('window:quit', (event) => {
-    return runWindowCommand(event.sender, 'quit')
+  ipcMain.handle('window:quit', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win && !win.isDestroyed()) win.close()
+    setTimeout(() => app.exit(0), 0)
   })
 }

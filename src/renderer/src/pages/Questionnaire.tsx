@@ -21,12 +21,9 @@ export default function QuestionnairePage() {
       dataSource={questionnaires}
       renderItem={(item: any) => (
         <List.Item
+          className="lp2-card"
           style={{
-            background: '#fff',
-            borderRadius: 8,
-            padding: '16px 20px',
             marginBottom: 10,
-            border: '1px solid #f0f0f0',
           }}
           actions={[
             <Button
