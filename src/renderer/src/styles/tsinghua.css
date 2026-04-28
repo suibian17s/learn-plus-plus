@@ -6330,3 +6330,93 @@ html.lp2-window-closing .login-v2-frame {
   box-shadow: 0 10px 22px rgba(76, 29, 149, 0.12) !important;
   z-index: 3 !important;
 }
+
+/* ---- Global search dropdown ---- */
+.lp2-search-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.lp2-search-wrapper .lp2-search.lp2-home-search {
+  width: 100% !important;
+  height: 42px !important;
+  border-radius: 999px !important;
+  border-color: var(--lp2-border) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: var(--lp2-shadow-sm) !important;
+}
+
+.lp2-search-wrapper .lp2-search.lp2-home-search:hover,
+.lp2-search-wrapper .lp2-search.lp2-home-search:focus-within {
+  border-color: var(--lp2-primary) !important;
+  box-shadow: 0 0 0 2px rgba(107, 70, 193, 0.08) !important;
+}
+
+.lp2-search-wrapper .lp2-search.lp2-home-search .ant-input {
+  background: transparent !important;
+  font-size: 14px !important;
+}
+
+.lp2-search-wrapper .lp2-search.lp2-home-search .ant-input::placeholder {
+  color: var(--lp2-tertiary) !important;
+}
+
+.search-results-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #E8E0F0;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(107, 70, 193, 0.12);
+  max-height: 360px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.search-result-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #F5F0FF;
+  transition: background 0.2s var(--ease-out);
+  display: flex;
+  align-items: center;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-item:hover { background: #F9F5FF; }
+
+.search-result-type {
+  display: inline-block;
+  font-size: 11px;
+  background: #EDE9FE;
+  color: #6B46C1;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.search-result-title {
+  font-weight: 600;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.search-result-sub {
+  color: #999;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-empty {
+  padding: 16px;
+  text-align: center;
+  color: #999;
+}

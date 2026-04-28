@@ -14,6 +14,21 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<any>({})
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [localSemesters, setLocalSemesters] = useState<{ id: string; name: string }[]>([])
+  const [selectedSemesterId, setSelectedSemesterId] = useState('')
+
+  useEffect(() => {
+    window.learn.course.listSemesters().then((r: any) => {
+      setLocalSemesters(r.semesters || [])
+      // Prefer persisted lastSemesterId, fall back to current semester from API
+      const savedId = settings.lastSemesterId
+      if (savedId && (r.semesters || []).some((s: any) => s.id === savedId)) {
+        setSelectedSemesterId(savedId)
+      } else {
+        setSelectedSemesterId(r.current?.id || '')
+      }
+    })
+  }, [settings.lastSemesterId])
   const selectedProvider = Form.useWatch('aiProvider', form) || settings.aiProvider || 'anthropic'
   const providerPreset = getAiProviderPreset(selectedProvider)
   const modelOptions = providerPreset.models
@@ -84,6 +99,9 @@ export default function SettingsPage() {
   }
 
   async function handleSemesterChange(value: string) {
+    setSelectedSemesterId(value)
+    await window.learn.settings.set({ lastSemesterId: value })
+
     const selected = semesters.find((s) => s.id === value)
     if (selected) setSemesters(semesters, selected)
 
@@ -121,11 +139,11 @@ export default function SettingsPage() {
         <Card title={<Space><CalendarOutlined /> 学期设置</Space>} size="small">
           <Form.Item label="当前学期" style={{ marginBottom: 8 }}>
             <Select
-              value={currentSemester?.id}
+              value={selectedSemesterId || currentSemester?.id}
               onChange={handleSemesterChange}
               placeholder="选择学期"
               style={{ maxWidth: 320 }}
-              options={semesters.map((s) => ({ value: s.id, label: s.name }))}
+              options={(localSemesters.length ? localSemesters : semesters).map((s) => ({ value: s.id, label: s.name }))}
             />
           </Form.Item>
           <div style={{ color: '#888', fontSize: 13 }}>

@@ -60,6 +60,9 @@ export default function AppShell() {
   const [accountStore, setAccountStore] = useState<{ activeId?: string; accounts: any[] }>({ accounts: [] })
   const [updateNotice, setUpdateNotice] = useState<UpdateNotice | null>(null)
   const { downloads, addOrUpdate } = useDownloadStore()
+  const [searchValue, setSearchValue] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [showResults, setShowResults] = useState(false)
 
   const pathParts = location.pathname.split('/')
   const isCourseRoute = location.pathname.startsWith('/course/')
@@ -362,14 +365,55 @@ export default function AppShell() {
     message.info(`${label} 将在 v2.0 后续开发中接入`)
   }
 
+  async function handleSearch(value: string) {
+    setSearchValue(value)
+    if (!value.trim()) { setSearchResults([]); setShowResults(false); return }
+    const results = await window.learn.search.query(value)
+    setSearchResults(results)
+    setShowResults(true)
+  }
+
+  function handleResultClick(result: any) {
+    setShowResults(false)
+    setSearchValue('')
+    if (result.courseId) {
+      navigate(`/course/${result.courseId}/${result.targetTab || 'notifications'}`)
+    } else if (result.targetTab === 'mailbox') {
+      navigate('/mailbox')
+    }
+  }
+
   function renderTopbar() {
     if (isHomeRoute) {
       return (
         <>
-          <button className="lp2-search lp2-home-search" type="button" onClick={() => handlePlannedEntry('全局搜索')}>
-            <SearchOutlined />
-            <span>搜索课程、作业、资料、邮件、公告...</span>
-          </button>
+          <div className="lp2-search-wrapper">
+            <Input
+              className="lp2-search lp2-home-search"
+              prefix={<SearchOutlined />}
+              placeholder="搜索课程、作业、资料、邮件、公告..."
+              value={searchValue}
+              onChange={(e) => handleSearch(e.target.value)}
+              onFocus={() => { if (searchResults.length > 0) setShowResults(true) }}
+              onBlur={() => setTimeout(() => setShowResults(false), 200)}
+              allowClear
+            />
+            {showResults && (
+              <div className="search-results-dropdown">
+                {searchResults.length === 0 ? (
+                  <div className="search-empty">无结果</div>
+                ) : (
+                  searchResults.map((r, i) => (
+                    <div key={i} className="search-result-item" onMouseDown={() => handleResultClick(r)}>
+                      <span className="search-result-type">{r.type}</span>
+                      <span className="search-result-title">{r.title}</span>
+                      <span className="search-result-sub">{r.subtitle}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <div className="lp2-top-actions">
             <Tooltip title="刷新">
               <Button type="text" icon={<ReloadOutlined />} onClick={handleGlobalRefresh} />
