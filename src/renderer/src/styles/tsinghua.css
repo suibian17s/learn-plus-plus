@@ -6218,7 +6218,7 @@ html.lp2-window-closing .login-v2-frame {
 }
 
 .lp2-mail-layout {
-  grid-template-columns: minmax(360px, 500px) minmax(0, 1fr) !important;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) !important;
   gap: 22px !important;
 }
 
@@ -6233,6 +6233,24 @@ html.lp2-window-closing .login-v2-frame {
 
 .lp2-mail-detail {
   border-radius: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.lp2-mail-detail .lp2-mail-detail-title {
+  flex-shrink: 0 !important;
+}
+
+.lp2-mail-detail .lp2-mail-body {
+  flex: 1 !important;
+  overflow: auto !important;
+  min-height: 0 !important;
+}
+
+.lp2-mail-detail .lp2-mail-detail-actions {
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
 }
 
 .lp2-tutor-chat-layout {
@@ -6462,6 +6480,18 @@ html.lp2-window-closing .login-v2-frame {
   color: var(--lp2-tertiary) !important;
 }
 
+/* Fix: override base .lp2-search rules that conflict with Ant Design Input */
+.lp2-search-wrapper .lp2-search.lp2-home-search {
+  display: flex !important;
+  cursor: text !important;
+}
+
+.lp2-search-wrapper .lp2-search.lp2-home-search span {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+
 .search-results-dropdown {
   position: absolute;
   top: calc(100% + 8px);
@@ -6562,4 +6592,47 @@ html.lp2-window-closing .login-v2-frame {
   background: #E8F5E0;
   color: #3C7A08;
   font-weight: 600;
+}
+
+/* ── Tutor 2.0 full-width layout ── */
+.lp2-tutor-chat-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  grid-template-columns: unset !important;
+  gap: 0 !important;
+}
+.lp2-ai-chat-panel {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  max-width: 900px !important;
+  margin: 0 auto !important;
+  width: 100% !important;
+}
+
+/* ── Tutor button animations ── */
+.lp2-ai-quick-row button,
+.lp2-ai-input-bar button {
+  border-radius: 10px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 500 !important;
+}
+.lp2-ai-quick-row button:hover,
+.lp2-ai-input-bar button:hover {
+  transform: scale(1.03) !important;
+  box-shadow: 0 4px 12px rgba(107, 70, 193, 0.15) !important;
+}
+.lp2-ai-quick-row button:active,
+.lp2-ai-input-bar button:active {
+  transform: scale(0.97) !important;
+}
+
+/* Send button purple gradient */
+.lp2-ai-input-bar .ant-btn-primary {
+  background: linear-gradient(135deg, #6B46C1, #4C1D95) !important;
+  border: none !important;
+}
+.lp2-ai-input-bar .ant-btn-primary:hover {
+  background: linear-gradient(135deg, #7B56D1, #5C2DA5) !important;
 }

@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button, Input, Modal, Tag, message } from 'antd'
 import {
-  CalendarOutlined,
-  CheckCircleOutlined,
-  FileTextOutlined,
-  GlobalOutlined,
   RobotOutlined,
   SendOutlined,
   StopOutlined,
-  ThunderboltOutlined,
   WarningOutlined,
   DeleteOutlined,
 } from '@ant-design/icons'
@@ -24,13 +19,6 @@ const quickActions = [
   { label: '出几道练习题', prompt: '请根据当前课程内容出几道练习题，帮助我自查薄弱知识点' },
 ]
 
-const featureList = [
-  { title: '知识总结', desc: '把课程资料整理成重点、摘要和复习提纲', icon: <FileTextOutlined />, prompt: '请帮我总结当前课程的核心知识点和重点内容，整理成清晰的摘要。' },
-  { title: '全局辅助', desc: '结合课程、邮件、公告与作业安排学习任务', icon: <GlobalOutlined />, prompt: '请根据我的课程情况，分析当前最需要关注的事项并给出学习建议。' },
-  { title: '出题练习', desc: '生成随堂练习题，帮助自查薄弱知识点', icon: <CheckCircleOutlined />, prompt: '请根据当前课程内容出几道练习题，帮助我自查薄弱知识点。' },
-  { title: '学习计划', desc: '按考试与截止时间规划复习节奏', icon: <CalendarOutlined />, prompt: '请帮我制定一个详细的学习计划，按考试和作业截止时间规划复习节奏。' },
-  { title: '一键完成作业', desc: '生成参考思路与解题框架，仅供学习参考', icon: <ThunderboltOutlined />, integrity: true },
-]
 
 function getToolLabel(name: string): string {
   const map: Record<string, string> = {
@@ -250,15 +238,6 @@ export default function TutorPage() {
     openHomeworkAuto()
   }
 
-  function handleFeatureClick(item: (typeof featureList)[number]) {
-    if (item.integrity) {
-      setIntegrityOpen(true)
-      return
-    }
-    if ('prompt' in item && item.prompt) {
-      sendMessage(item.prompt)
-    }
-  }
 
   function renderMessageContent(content: string) {
     // Support basic newlines → <br/>
@@ -344,61 +323,6 @@ export default function TutorPage() {
           </div>
         </main>
 
-        <aside className="lp2-ai-side-panel">
-          <section className="lp2-ai-profile-card">
-            <div className="lp2-ai-profile-top">
-              <span>
-                <RobotOutlined />
-                甘蔗 Tutor
-              </span>
-              {online !== null ? (
-                <Tag color={online ? 'green' : 'default'}>{online ? '在线' : '离线'}</Tag>
-              ) : (
-                <Tag>检测中...</Tag>
-              )}
-            </div>
-            <img src={tutorAvatar} alt="甘蔗 Tutor" />
-            <h2>你的 AI 学习助手</h2>
-            <p>
-              {currentCourse
-                ? `当前参考课程：${currentCourse.name}`
-                : '选择课程后可自动带入学习上下文'}
-            </p>
-            <div style={{ marginTop: 8, fontSize: 13, color: '#888' }}>
-              风格：{style === 'cute' ? '可爱风' : '正经风'}
-              <Button
-                type="link"
-                size="small"
-                onClick={() => setShowStylePicker(true)}
-                style={{ padding: '0 4px' }}
-              >
-                切换
-              </Button>
-            </div>
-          </section>
-
-          <section className="lp2-ai-feature-panel">
-            <h3>可用功能</h3>
-            <div className="lp2-ai-feature-list">
-              {featureList.map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  className={item.integrity ? 'integrity' : ''}
-                  onClick={() => handleFeatureClick(item)}
-                >
-                  <span>{item.icon}</span>
-                  <strong>{item.title}</strong>
-                  <small>{item.desc}</small>
-                </button>
-              ))}
-            </div>
-            <div className="lp2-ai-integrity-note">
-              <WarningOutlined />
-              <span>一键完成作业仅用于理解题意、生成参考思路与自查，请遵守课程规范。</span>
-            </div>
-          </section>
-        </aside>
       </div>
 
       {/* First-use style picker */}
@@ -457,7 +381,7 @@ export default function TutorPage() {
           </div>
         </div>
         <div style={{ textAlign: 'center', marginTop: 12, color: '#888', fontSize: 13 }}>
-          风格可随时在设置页或侧栏中更改
+          风格可随时在设置页中更改
         </div>
       </Modal>
 
