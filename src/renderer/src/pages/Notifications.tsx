@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, List, Drawer, Input, Typography, Spin, Tag, message } from 'antd'
+import { Button, List, Drawer, Input, Modal, Typography, Spin, Tag, message } from 'antd'
 import { DownloadOutlined, FolderOpenOutlined, PaperClipOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons'
 import DOMPurify from 'dompurify'
 import EmptyState from '../components/EmptyState'
@@ -14,6 +14,9 @@ export default function NotificationsPage() {
   const [keyword, setKeyword] = useState('')
   const [downloadingAttachment, setDownloadingAttachment] = useState(false)
   const [attachmentState, setAttachmentState] = useState<{ downloaded: boolean; destPath: string } | null>(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryText, setSummaryText] = useState('')
   const downloadRecords = useDownloadStore((s) => s.downloads)
   const addDownloadRecord = useDownloadStore((s) => s.addOrUpdate)
 
@@ -99,9 +102,6 @@ export default function NotificationsPage() {
       </style>
       <div className="lp2-course-local-toolbar">
         <Input prefix={<SearchOutlined />} placeholder="搜索公告" allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
-          甘蔗 Tutor 总结
-        </Button>
       </div>
 
       <List
@@ -110,6 +110,31 @@ export default function NotificationsPage() {
           <List.Item
             onClick={() => setDetailId(item.id)}
             style={{ cursor: 'pointer', padding: '14px 0' }}
+            actions={[
+              <Button
+                key="tutor"
+                className="lp2-green-button"
+                size="small"
+                icon={<RobotOutlined />}
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  const plainContent = (item.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                  setSummaryOpen(true)
+                  setSummaryLoading(true)
+                  setSummaryText('')
+                  try {
+                    const prompt = `请总结以下课程公告：\n标题：${item.title || ''}\n发布人：${item.publisher || ''}\n时间：${item.publishTime || ''}\n内容：${plainContent.slice(0, 3000)}`
+                    const result = await window.learn.hwai.tutorAsk(courseId!, prompt)
+                    setSummaryText(result.content || '总结生成失败')
+                  } catch (err: any) {
+                    setSummaryText('总结生成失败：' + (err.message || '未知错误'))
+                  }
+                  setSummaryLoading(false)
+                }}
+              >
+                甘蔗 Tutor
+              </Button>
+            ]}
           >
             <List.Item.Meta
               title={
@@ -192,6 +217,23 @@ export default function NotificationsPage() {
           </Typography>
         )}
       </Drawer>
+
+      <Modal
+        title="甘蔗 Tutor 公告总结"
+        open={summaryOpen}
+        onCancel={() => setSummaryOpen(false)}
+        footer={null}
+        width={600}
+      >
+        {summaryLoading ? (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Spin />
+            <p style={{ marginTop: 12, color: '#888' }}>正在生成公告总结...</p>
+          </div>
+        ) : (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+        )}
+      </Modal>
     </div>
   )
 }

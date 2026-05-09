@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Input, List, Spin, message } from 'antd'
+import { Button, Input, List, Modal, Spin } from 'antd'
 import { MessageOutlined, RobotOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons'
 import EmptyState from '../components/EmptyState'
 
@@ -9,6 +9,9 @@ export default function DiscussionPage() {
   const { courseId } = useParams()
   const navigate = useNavigate()
   const [keyword, setKeyword] = useState('')
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryText, setSummaryText] = useState('')
 
   const { data: discussions, isLoading } = useQuery({
     queryKey: ['discussions', courseId],
@@ -43,9 +46,6 @@ export default function DiscussionPage() {
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
         />
-        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 讨论总结将在后续接入')}>
-          甘蔗 Tutor 总结
-        </Button>
       </div>
       <List
         dataSource={visibleDiscussions}
@@ -57,6 +57,30 @@ export default function DiscussionPage() {
               cursor: 'pointer',
             }}
             onClick={() => openDiscussion(item)}
+            actions={[
+              <Button
+                key="tutor"
+                className="lp2-green-button"
+                size="small"
+                icon={<RobotOutlined />}
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  setSummaryOpen(true)
+                  setSummaryLoading(true)
+                  setSummaryText('')
+                  try {
+                    const prompt = `请总结以下课程讨论：\n标题：${item.title || ''}\n作者：${item.author || ''}\n时间：${item.publishTime || ''}\n回复数：${item.replyCount || 0}`
+                    const result = await window.learn.hwai.tutorAsk(courseId!, prompt)
+                    setSummaryText(result.content || '总结生成失败')
+                  } catch (err: any) {
+                    setSummaryText('总结生成失败：' + (err.message || '未知错误'))
+                  }
+                  setSummaryLoading(false)
+                }}
+              >
+                甘蔗 Tutor
+              </Button>
+            ]}
           >
             <List.Item.Meta
               title={<span style={{ fontSize: 15, fontWeight: 500 }}>{item.title}</span>}
@@ -79,6 +103,23 @@ export default function DiscussionPage() {
           </List.Item>
         )}
       />
+
+      <Modal
+        title="甘蔗 Tutor 讨论总结"
+        open={summaryOpen}
+        onCancel={() => setSummaryOpen(false)}
+        footer={null}
+        width={600}
+      >
+        {summaryLoading ? (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Spin />
+            <p style={{ marginTop: 12, color: '#888' }}>正在生成讨论总结...</p>
+          </div>
+        ) : (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+        )}
+      </Modal>
     </div>
   )
 }

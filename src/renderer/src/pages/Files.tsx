@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Input, message, Select, Spin, Tag } from 'antd'
+import { Button, Input, message, Modal, Select, Spin, Tag } from 'antd'
 import {
   CloudDownloadOutlined,
   DownloadOutlined,
@@ -35,6 +35,9 @@ export default function FilesPage() {
   const [keyword, setKeyword] = useState('')
   const [chapterFilter, setChapterFilter] = useState('all')
   const [sortOrder, setSortOrder] = useState('time-desc')
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryText, setSummaryText] = useState('')
   const downloadRecords = useDownloadStore((state) => state.downloads)
   const addDownloadRecord = useDownloadStore((state) => state.addOrUpdate)
 
@@ -174,7 +177,7 @@ export default function FilesPage() {
       )
       message.destroy('preview')
       if (result.method === 'pdf' || result.method === 'image') {
-        window.learn.files.openFile(result.content)
+        window.learn.files.previewWindow(result.content, result.fileName)
       } else {
         message.info(result.content)
       }
@@ -235,6 +238,19 @@ export default function FilesPage() {
       message.destroy('batch')
       message.error('批量下载失败')
     }
+  }
+
+  async function handleTutorSummary() {
+    setSummaryOpen(true)
+    setSummaryLoading(true)
+    setSummaryText('')
+    try {
+      const result = await window.learn.hwai.tutorSummary(courseId!, 'files')
+      setSummaryText(result.content || '总结生成失败')
+    } catch (err: any) {
+      setSummaryText('总结生成失败：' + (err.message || '未知错误'))
+    }
+    setSummaryLoading(false)
   }
 
   function formatSize(bytes: number) {
@@ -316,9 +332,6 @@ export default function FilesPage() {
         />
         <Button icon={<CloudDownloadOutlined />} onClick={handleBatchDownload}>
           批量下载
-        </Button>
-        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
-          甘蔗 Tutor 总结
         </Button>
       </div>
 
@@ -403,7 +416,7 @@ export default function FilesPage() {
                   >
                     打开课件
                   </Button>
-                  <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={() => message.info('甘蔗 Tutor 总结将在后续接入')}>
+                  <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>
                     甘蔗 Tutor 总结
                   </Button>
                 </>
@@ -416,6 +429,23 @@ export default function FilesPage() {
           </aside>
         )}
       </div>
+
+      <Modal
+        title="甘蔗 Tutor 课件总结"
+        open={summaryOpen}
+        onCancel={() => setSummaryOpen(false)}
+        footer={null}
+        width={600}
+      >
+        {summaryLoading ? (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Spin />
+            <p style={{ marginTop: 12, color: '#888' }}>正在生成课件总结...</p>
+          </div>
+        ) : (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+        )}
+      </Modal>
     </div>
   )
 }
