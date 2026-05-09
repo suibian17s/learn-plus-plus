@@ -76,6 +76,7 @@ interface LearnApi {
     tutorAbort: (sessionId: string) => Promise<void>
     onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => () => void
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
+    summarizeFile: (file: { name: string; url: string; fileType?: string }) => Promise<{ ok: boolean; content?: string; error?: string }>
     healthCheck: () => Promise<{ ok: boolean; error?: string }>
   }
   settings: {

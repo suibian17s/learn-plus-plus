@@ -90,6 +90,8 @@ const api = {
       ipcRenderer.on('hwai:generate-end', handler)
       return () => ipcRenderer.removeListener('hwai:generate-end', handler)
     },
+    summarizeFile: (file: { name: string; url: string; fileType?: string }) =>
+      ipcRenderer.invoke('hwai:summarize-file', file),
     healthCheck: () => ipcRenderer.invoke('hwai:health-check'),
   },
   settings: {

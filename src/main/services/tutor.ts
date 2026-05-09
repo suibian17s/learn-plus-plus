@@ -1,5 +1,10 @@
 import { withAuth } from './learn'
 import { complete } from './ai'
+import { downloadUrlToBuffer } from './downloader'
+import { parseAttachment } from './attachment-parser'
+import os from 'os'
+import path from 'path'
+import fs from 'fs'
 
 export type TutorSummaryKind = 'notifications' | 'files' | 'discussion'
 
@@ -98,4 +103,37 @@ export async function askTutor(courseId: string, question: string): Promise<stri
     ],
     maxTokens: 2200,
   })
+}
+
+export async function summarizeSingleFile(file: { name: string; url: string; fileType?: string }): Promise<string> {
+  const buffer = await downloadUrlToBuffer(file.url)
+  const tmpDir = path.join(os.tmpdir(), 'learnpp-tutor-files')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const tmpPath = path.join(tmpDir, `${Date.now()}_${file.name}`)
+  fs.writeFileSync(tmpPath, buffer)
+
+  try {
+    const parsed = await parseAttachment(tmpPath)
+    if (!parsed.text.trim()) {
+      return `文件 "${file.name}" 无法提取文本内容（可能为扫描版 PDF 或纯图片），请下载后手动查看。`
+    }
+
+    const summary = await complete({
+      system: '你是 learn++ 的甘蔗 tutor。请用中文总结以下课件内容，输出简洁有条理的摘要，突出关键概念和学习重点。',
+      messages: [{
+        role: 'user' as const,
+        content: `课件名称：${file.name}\n\n课件内容：\n${parsed.text.slice(0, 15000)}\n\n请总结该课件的：\n1. 核心知识点\n2. 重点概念\n3. 学习建议`,
+      }],
+      maxTokens: 2000,
+    })
+
+    try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
+    return summary
+  } catch (err: any) {
+    try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
+    if (err.message?.includes('不支持的文件类型')) {
+      return `文件类型 "${path.extname(file.name)}" 暂不支持内容解析，请下载后手动查看。`
+    }
+    throw err
+  }
 }

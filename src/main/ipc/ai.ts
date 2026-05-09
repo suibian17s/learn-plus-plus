@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import fs from 'fs'
 import { settingsFile } from '../utils/paths'
 import { scan, analyze, generate, abortGeneration, buildHwAttachment } from '../services/homework-ai'
-import { askTutor, summarizeCourseArea } from '../services/tutor'
+import { askTutor, summarizeCourseArea, summarizeSingleFile } from '../services/tutor'
 import { complete } from '../services/ai'
 import { withAuth } from '../services/learn'
 import { query as searchQuery } from '../services/search-index'
@@ -647,6 +647,15 @@ export function registerAiIpc(): void {
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err.message || '连接失败' }
+    }
+  })
+
+  ipcMain.handle('hwai:summarize-file', async (_e, file: { name: string; url: string; fileType?: string }) => {
+    try {
+      const content = await summarizeSingleFile(file)
+      return { ok: true, content }
+    } catch (err) {
+      return { ok: false, error: formatError(err) }
     }
   })
 }

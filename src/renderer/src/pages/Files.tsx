@@ -241,12 +241,21 @@ export default function FilesPage() {
   }
 
   async function handleTutorSummary() {
+    if (!selectedFile) return
     setSummaryOpen(true)
     setSummaryLoading(true)
     setSummaryText('')
     try {
-      const result = await window.learn.hwai.tutorSummary(courseId!, 'files')
-      setSummaryText(result.content || '总结生成失败')
+      const result = await window.learn.hwai.summarizeFile({
+        name: selectedFile.name,
+        url: selectedFile.downloadUrl,
+        fileType: selectedFile.fileType,
+      })
+      if (!result.ok) {
+        setSummaryText(result.error || '总结生成失败')
+      } else {
+        setSummaryText(result.content || '暂无内容')
+      }
     } catch (err: any) {
       setSummaryText('总结生成失败：' + (err.message || '未知错误'))
     }
@@ -416,7 +425,7 @@ export default function FilesPage() {
                   >
                     打开课件
                   </Button>
-                  <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>
+                  <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary} disabled={!selectedFile}>
                     甘蔗 Tutor 总结
                   </Button>
                 </>
