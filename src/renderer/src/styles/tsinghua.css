@@ -6636,3 +6636,18 @@ html.lp2-window-closing .login-v2-frame {
 .lp2-ai-input-bar .ant-btn-primary:hover {
   background: linear-gradient(135deg, #7B56D1, #5C2DA5) !important;
 }
+
+/* ── Homework action buttons ── */
+.lp2-course-local-toolbar .ant-btn,
+.lp2-card .ant-btn {
+  border-radius: 10px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.lp2-card .ant-btn:hover {
+  transform: scale(1.03) !important;
+  box-shadow: 0 4px 12px rgba(107, 70, 193, 0.15) !important;
+}
+.lp2-card .ant-btn:active {
+  transform: scale(0.97) !important;
+}

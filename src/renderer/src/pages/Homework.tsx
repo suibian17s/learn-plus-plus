@@ -127,7 +127,7 @@ export default function HomeworkPage() {
             <Button
               key="submit"
               type="primary"
-              size="small"
+              size="middle"
               onClick={(e) => { e.stopPropagation(); openSubmit(hw) }}
             >
               提交作业
@@ -136,14 +136,15 @@ export default function HomeworkPage() {
           showAi && (
             <Button
               key="ai"
-              size="small"
+              className="lp2-green-button"
+              size="middle"
               icon={<RobotOutlined />}
               onClick={(e) => {
                 e.stopPropagation()
                 navigate(`/course/${courseId}/homework/auto`)
               }}
             >
-              甘蔗 tutor
+              甘蔗 Tutor
             </Button>
           ),
         ].filter(Boolean)}
