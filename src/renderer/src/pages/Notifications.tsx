@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, List, Drawer, Input, Modal, Typography, Spin, Tag, message } from 'antd'
+import { Button, List, Drawer, Input, Modal, Typography, Spin, Tag } from 'antd'
 import { DownloadOutlined, FolderOpenOutlined, PaperClipOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons'
 import DOMPurify from 'dompurify'
 import EmptyState from '../components/EmptyState'
