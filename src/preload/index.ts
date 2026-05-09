@@ -26,6 +26,8 @@ const api = {
       ipcRenderer.invoke('files:download', fileId, fileName, url),
     openFolder: (filePath: string) => ipcRenderer.invoke('files:openFolder', filePath),
     openFile: (filePath: string) => ipcRenderer.invoke('files:openFile', filePath),
+    previewWindow: (filePath: string, fileName: string) =>
+      ipcRenderer.invoke('files:previewWindow', filePath, fileName),
     selectDirectory: () => ipcRenderer.invoke('files:selectDirectory'),
     exists: (filePath: string) => ipcRenderer.invoke('files:exists', filePath),
     downloadState: (fileName: string) => ipcRenderer.invoke('files:downloadState', fileName),
@@ -88,6 +90,7 @@ const api = {
       ipcRenderer.on('hwai:generate-end', handler)
       return () => ipcRenderer.removeListener('hwai:generate-end', handler)
     },
+    healthCheck: () => ipcRenderer.invoke('hwai:health-check'),
   },
   settings: {
     getAll: () => ipcRenderer.invoke('settings:get'),
@@ -105,12 +108,18 @@ const api = {
   },
   mail: {
     login: () => ipcRenderer.invoke('mail:login'),
+    loginImap: (config: any) => ipcRenderer.invoke('mail:login-imap', config),
+    testConnection: (config: any) => ipcRenderer.invoke('mail:test-connection', config),
     status: () => ipcRenderer.invoke('mail:status'),
     list: (folder: string) => ipcRenderer.invoke('mail:list', folder),
     get: (mailId: string) => ipcRenderer.invoke('mail:get', mailId),
     star: (mailId: string, starred: boolean) =>
       ipcRenderer.invoke('mail:star', mailId, starred),
     delete: (mailId: string) => ipcRenderer.invoke('mail:delete', mailId),
+    logout: () => ipcRenderer.invoke('mail:logout'),
+    show: () => ipcRenderer.invoke('mail:show'),
+    compose: (params: { to: string; subject: string; body: string }) =>
+      ipcRenderer.invoke('mail:compose', params),
   },
   app: {
     info: () => ipcRenderer.invoke('app:info'),

@@ -22,6 +22,7 @@ export interface LearnApi {
     download: (fileId: string, fileName: string, url: string) => Promise<{ downloadId: string; destPath: string }>
     openFolder: (filePath: string) => Promise<void>
     openFile: (filePath: string) => Promise<void>
+    previewWindow: (filePath: string, fileName: string) => Promise<void>
     selectDirectory: () => Promise<string | null>
     exists: (filePath: string) => Promise<boolean>
     downloadState: (fileName: string) => Promise<{ downloaded: boolean; destPath: string }>
@@ -62,6 +63,7 @@ export interface LearnApi {
     tutorAbort: (sessionId: string) => Promise<void>
     onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => () => void
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
+    healthCheck: () => Promise<{ ok: boolean; error?: string }>
   }
   settings: {
     getAll: () => Promise<any>
@@ -83,11 +85,16 @@ export interface LearnApi {
   }
   mail: {
     login: () => Promise<{ ok: boolean }>
+    loginImap: (config: { imapHost: string; imapPort: number; imapTls: boolean; smtpHost: string; smtpPort: number; smtpTls: boolean; username: string; password: string }) => Promise<{ ok: boolean }>
+    testConnection: (config: { imapHost: string; imapPort: number; imapTls: boolean; smtpHost: string; smtpPort: number; smtpTls: boolean; username: string; password: string }) => Promise<{ ok: boolean }>
     status: () => Promise<{ loggedIn: boolean }>
     list: (folder: string) => Promise<{ mails: { id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
     get: (mailId: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean; body: string; attachments: { name: string; url: string }[] } | null>
     star: (mailId: string, starred: boolean) => Promise<{ ok: boolean }>
     delete: (mailId: string) => Promise<{ ok: boolean }>
+    logout: () => Promise<{ ok: boolean }>
+    show: () => Promise<void>
+    compose: (params: { to: string; subject: string; body: string }) => Promise<{ ok: boolean; error?: string }>
   }
   app: {
     info: () => Promise<{
