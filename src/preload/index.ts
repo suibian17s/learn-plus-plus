@@ -93,6 +93,17 @@ const api = {
     summarizeFile: (file: { name: string; url: string; fileType?: string }) =>
       ipcRenderer.invoke('hwai:summarize-file', file),
     healthCheck: () => ipcRenderer.invoke('hwai:health-check'),
+    orchestrate: (params: any) => ipcRenderer.invoke('hwai:orchestrate', params),
+    onOrchestrateChunk: (cb: any) => {
+      const handler = (_e: any, data: any) => cb(data)
+      ipcRenderer.on('hwai:orchestrate-chunk', handler)
+      return () => ipcRenderer.removeListener('hwai:orchestrate-chunk', handler)
+    },
+    onOrchestrateEnd: (cb: any) => {
+      const handler = (_e: any, data: any) => cb(data)
+      ipcRenderer.on('hwai:orchestrate-end', handler)
+      return () => ipcRenderer.removeListener('hwai:orchestrate-end', handler)
+    },
   },
   settings: {
     getAll: () => ipcRenderer.invoke('settings:get'),

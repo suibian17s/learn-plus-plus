@@ -78,6 +78,9 @@ interface LearnApi {
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
     summarizeFile: (file: { name: string; url: string; fileType?: string }) => Promise<{ ok: boolean; content?: string; error?: string }>
     healthCheck: () => Promise<{ ok: boolean; error?: string }>
+    orchestrate: (params: { analyzed: any; sessionId: string; outputFormat?: string }) => Promise<{ ok: boolean; result?: any; error?: string }>
+    onOrchestrateChunk: (cb: (data: { sessionId: string; phase: any; detail?: string; content?: string }) => void) => () => void
+    onOrchestrateEnd: (cb: (data: { sessionId: string; result?: any; error?: string }) => void) => () => void
   }
   settings: {
     getAll: () => Promise<any>

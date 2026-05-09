@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import fs from 'fs'
 import { settingsFile } from '../utils/paths'
 import { scan, analyze, generate, abortGeneration, buildHwAttachment } from '../services/homework-ai'
+import { orchestrate } from '../services/homework-orchestrator'
 import { askTutor, summarizeCourseArea, summarizeSingleFile } from '../services/tutor'
 import { complete } from '../services/ai'
 import { withAuth } from '../services/learn'
@@ -656,6 +657,42 @@ export function registerAiIpc(): void {
       return { ok: true, content }
     } catch (err) {
       return { ok: false, error: formatError(err) }
+    }
+  })
+
+  ipcMain.handle('hwai:orchestrate', async (event, req: any) => {
+    const { analyzed, sessionId, outputFormat } = req
+    const sender = event.sender
+    const win = BrowserWindow.fromWebContents(sender)
+
+    const ctrl = new AbortController()
+    abortControllers.set(sessionId, ctrl)
+
+    try {
+      const result = await orchestrate({
+        analyzed,
+        sessionId,
+        outputFormat,
+        signal: ctrl.signal,
+        onProgress: (chunk) => {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('hwai:orchestrate-chunk', { sessionId, ...chunk })
+          }
+        },
+      })
+
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('hwai:orchestrate-end', { sessionId, result })
+      }
+
+      return { ok: true, result }
+    } catch (err: any) {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('hwai:orchestrate-end', { sessionId, error: formatError(err) })
+      }
+      return { ok: false, error: formatError(err) }
+    } finally {
+      abortControllers.delete(sessionId)
     }
   })
 }
