@@ -630,9 +630,7 @@ export function registerAiIpc(): void {
       if (!settings.endpoint) return { ok: false, error: 'API Endpoint 未配置' }
 
       const headers = buildAiHeaders(settings.apiKey, settings.provider, settings.apiFormat)
-      const body = settings.apiFormat === 'anthropic'
-        ? JSON.stringify({ model: settings.model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] })
-        : JSON.stringify({ model: settings.model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] })
+      const body = JSON.stringify({ model: settings.model, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] })
 
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 8000)

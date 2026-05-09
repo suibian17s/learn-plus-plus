@@ -93,17 +93,21 @@ export default function TutorPage() {
 
   // Health check on mount
   useEffect(() => {
+    let cancelled = false
     window.learn.hwai.healthCheck().then((r) => {
+      if (cancelled) return
       setOnline(r.ok)
       if (!r.ok) {
         setHealthError(r.error || '未知错误')
         setHealthModalOpen(true)
       }
     }).catch(() => {
+      if (cancelled) return
       setOnline(false)
       setHealthError('无法连接到 AI 服务')
       setHealthModalOpen(true)
     })
+    return () => { cancelled = true }
   }, [])
 
   // Seed welcome message
@@ -347,7 +351,11 @@ export default function TutorPage() {
                 <RobotOutlined />
                 甘蔗 Tutor
               </span>
-              <Tag color={online ? 'green' : 'default'}>{online ? '在线' : '离线'}</Tag>
+              {online !== null ? (
+                <Tag color={online ? 'green' : 'default'}>{online ? '在线' : '离线'}</Tag>
+              ) : (
+                <Tag>检测中...</Tag>
+              )}
             </div>
             <img src={tutorAvatar} alt="甘蔗 Tutor" />
             <h2>你的 AI 学习助手</h2>
