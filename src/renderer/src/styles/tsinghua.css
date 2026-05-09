@@ -6651,3 +6651,12 @@ html.lp2-window-closing .login-v2-frame {
 .lp2-card .ant-btn:active {
   transform: scale(0.97) !important;
 }
+
+/* ── Orchestrate progress animation ── */
+.lp2-orchestrate-progress {
+  animation: lp2-fade-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes lp2-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}

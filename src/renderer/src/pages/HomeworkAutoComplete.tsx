@@ -58,6 +58,10 @@ export default function HomeworkAutoComplete() {
   const [tutorTitle, setTutorTitle] = useState('')
   const [tutorOutput, setTutorOutput] = useState('')
   const [tutorQuestion, setTutorQuestion] = useState('')
+  const [orchestratePhase, setOrchestratePhase] = useState<string>('')
+  const [reviewOutput, setReviewOutput] = useState<any>(null)
+  const [styleProfile, setStyleProfile] = useState<any>(null)
+  const [styleFallback, setStyleFallback] = useState(false)
 
   // Check risk acknowledgement
   useEffect(() => {
@@ -97,35 +101,41 @@ export default function HomeworkAutoComplete() {
       const analysis = await window.learn.hwai.analyze(courseId!, hw.homeworkId)
       setAnalyzed(analysis)
 
-      // Start generation
+      // Use new orchestrate pipeline
       setGenerating(true)
       clearStreamText()
-      const result = await window.learn.hwai.generate({
+      setOrchestratePhase('analyzing')
+      setStyleFallback(false)
+
+      const result = await window.learn.hwai.orchestrate({
         analyzed: analysis,
-        userInstruction,
-        sessionId,
+        sessionId: `orch-${Date.now()}`,
       })
 
-      if (result.aborted) {
-        message.info('生成已取消')
-        setGenerating(false)
-        return
-      }
-      if (result.error) {
-        message.error(result.error)
+      if (!result.ok) {
+        message.error(result.error || '生成失败')
         setGenerating(false)
         return
       }
 
-      setDraft(result.contentMarkdown)
-      if (result.attachmentSpec) {
-        // Build actual attachment file
+      const orchResult = result.result
+      setDraft(orchResult.contentMarkdown)
+      setReviewOutput(orchResult.review)
+      setStyleProfile(orchResult.styleProfile)
+
+      if (!orchResult.styleProfile) {
+        setStyleFallback(true)
+      }
+
+      // Build attachment if applicable
+      if (analysis.suggestedOutputs?.includes('docx')) {
         const ar = await window.learn.hwai.buildAttachment(
-          { kind: result.attachmentSpec.kind, filename: result.attachmentSpec.filename },
-          result.contentMarkdown,
+          { kind: 'docx', filename: `${hw.title || 'homework'}.docx` },
+          orchResult.contentMarkdown,
         )
         if (ar.tempPath) setAttachmentPath(ar.tempPath)
       }
+
       setGenerating(false)
     } catch (err) {
       message.error(`AI 处理失败: ${err}`)
@@ -137,18 +147,49 @@ export default function HomeworkAutoComplete() {
     if (!analyzed) return
     setGenerating(true)
     clearStreamText()
+    setOrchestratePhase('analyzing')
+    setStyleFallback(false)
     try {
-      const result = await window.learn.hwai.generate({
+      const result = await window.learn.hwai.orchestrate({
         analyzed,
-        userInstruction,
-        sessionId: `session-${Date.now()}`,
+        sessionId: `orch-${Date.now()}`,
+        outputFormat: undefined,
       })
-      if (!result.error && !result.aborted) {
-        setDraft(result.contentMarkdown)
+      if (result.ok && result.result) {
+        setDraft(result.result.contentMarkdown)
+        setReviewOutput(result.result.review)
+        setStyleProfile(result.result.styleProfile)
+        if (!result.result.styleProfile) {
+          setStyleFallback(true)
+        }
+      } else if (result.error) {
+        message.error(result.error)
       }
     } finally {
       setGenerating(false)
     }
+  }
+
+  async function handleRegenerateWithFormat(format: string) {
+    if (!analyzed) return
+    setGenerating(true)
+    clearStreamText()
+    setStyleFallback(false)
+    try {
+      const result = await window.learn.hwai.orchestrate({
+        analyzed,
+        sessionId: `orch-${Date.now()}`,
+        outputFormat: format,
+      })
+      if (result.ok && result.result) {
+        setDraft(result.result.contentMarkdown)
+        setReviewOutput(result.result.review)
+        setStyleProfile(result.result.styleProfile)
+      }
+    } catch (err) {
+      message.error(`重新生成失败: ${err}`)
+    }
+    setGenerating(false)
   }
 
   async function handleSubmit() {
@@ -368,11 +409,23 @@ export default function HomeworkAutoComplete() {
           </Button>
 
           {generating ? (
-            <Card style={{ textAlign: 'center', padding: 80 }}>
+            <Card style={{ textAlign: 'center', padding: 60 }}>
               <Spin size="large" />
-              <div style={{ marginTop: 16 }}>
-                <RobotOutlined style={{ fontSize: 32, color: '#52C41A' }} />
-                <div style={{ marginTop: 12, color: '#888' }}>甘蔗 tutor 正在生成草稿...</div>
+              <div style={{ marginTop: 20 }}>
+                <RobotOutlined style={{ fontSize: 36, color: '#52C41A' }} />
+                <div style={{ marginTop: 16, fontSize: 15, fontWeight: 500, color: '#333' }}>
+                  {orchestratePhase === 'analyzing' && '正在扫描课件和课程资料...'}
+                  {orchestratePhase === 'learning-style' && '正在学习往期作业风格...'}
+                  {orchestratePhase === 'decomposing' && '正在分析题目结构...'}
+                  {orchestratePhase === 'assembling' && '正在组装答案...'}
+                  {orchestratePhase === 'reviewing' && '甘蔗 Tutor 正在审查草稿...'}
+                  {orchestratePhase === 'done' && '完成！'}
+                </div>
+                {orchestratePhase === 'done' && (
+                  <Button onClick={() => setGenerating(false)} style={{ marginTop: 12 }}>
+                    查看草稿
+                  </Button>
+                )}
               </div>
               {streamText && (
                 <div style={{
@@ -410,6 +463,23 @@ export default function HomeworkAutoComplete() {
                 attachmentName={attachmentPath ? attachmentPath.split(/[/\\]/).pop() : undefined}
               />
 
+              {/* Style fallback alert */}
+              {styleFallback && !generating && (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="无法识别该课程往期作业风格（可能首次提交或历史作业不可访问），已使用标准学术格式生成。"
+                  style={{ marginBottom: 16 }}
+                  action={
+                    <Space>
+                      <Button size="small" onClick={() => handleRegenerateWithFormat('latex')}>LaTeX 格式</Button>
+                      <Button size="small" onClick={() => handleRegenerateWithFormat('docx')}>DOCX 格式</Button>
+                      <Button size="small" onClick={() => handleRegenerateWithFormat('pdf')}>PDF 格式</Button>
+                    </Space>
+                  }
+                />
+              )}
+
               {/* Code homework guard */}
               {analyzed?.type === 'code' && (
                 <Alert
@@ -429,6 +499,43 @@ export default function HomeworkAutoComplete() {
                   style={{ marginTop: 16 }}
                   showIcon
                 />
+              )}
+
+              {/* Review results card */}
+              {reviewOutput && !generating && (
+                <Card
+                  size="small"
+                  title={<Space><RobotOutlined style={{ color: '#52C41A' }} />甘蔗 Tutor 审查结果</Space>}
+                  style={{ marginTop: 16 }}
+                  extra={reviewOutput.passed
+                    ? <Tag color="green">通过</Tag>
+                    : <Tag color="orange">需关注</Tag>
+                  }
+                >
+                  {reviewOutput.issues?.length > 0 && (
+                    <div>
+                      {reviewOutput.issues.map((issue: any, i: number) => (
+                        <Alert
+                          key={i}
+                          type={issue.severity === 'critical' ? 'error' : issue.severity === 'warning' ? 'warning' : 'info'}
+                          message={issue.description}
+                          style={{ marginBottom: 8 }}
+                          showIcon
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {reviewOutput.needsManualReview?.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <strong>需人工复核：</strong>
+                      <ul>
+                        {reviewOutput.needsManualReview.map((item: string, i: number) => (
+                          <li key={i}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </Card>
               )}
 
               {/* Action bar */}
