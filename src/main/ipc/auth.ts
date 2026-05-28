@@ -4,6 +4,7 @@ import { saveCreds, loadCreds, clearAll, listAccounts, saveCurrentAccount, switc
 import { browserLogin } from '../services/browser-login'
 import { formatError } from '../utils/errors'
 import type { AuthStatus } from '../types'
+import { startTracking, stopTracking } from '../services/stats'
 
 export function registerAuthIpc(): void {
   ipcMain.handle('auth:login', async (_e, username: string, password: string, _remember: boolean) => {
@@ -14,6 +15,7 @@ export function registerAuthIpc(): void {
         const user = await getHelper().getUserInfo()
         await saveCurrentAccount(user)
       } catch { /* account snapshot is best-effort */ }
+      startTracking()
       return { ok: true }
     } catch (err) {
       return { ok: false, error: formatError(err) }
@@ -26,6 +28,7 @@ export function registerAuthIpc(): void {
       await initFromBrowserSession()
       const user = await getHelper().getUserInfo()
       await saveCurrentAccount(user)
+      startTracking()
       return { ok: true }
     } catch (err) {
       return { ok: false, error: formatError(err) }
@@ -44,6 +47,7 @@ export function registerAuthIpc(): void {
       await initFromBrowserSession()
       const user = await getHelper().getUserInfo()
       const account = await saveCurrentAccount(user)
+      startTracking()
       return { ok: true, account }
     } catch (err) {
       await syncApiCookiesToDefaultSession()
@@ -75,6 +79,7 @@ export function registerAuthIpc(): void {
   })
 
   ipcMain.handle('auth:logout', async () => {
+    stopTracking()
     await clearAll()
     return { ok: true }
   })

@@ -6493,8 +6493,8 @@ html.lp2-window-closing .login-v2-frame {
 }
 
 .search-results-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
+    position: absolute;
+    top: calc(100% + 8px);
   left: 0;
   right: 0;
   background: white;
@@ -6659,4 +6659,156 @@ html.lp2-window-closing .login-v2-frame {
 @keyframes lp2-fade-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Final home dashboard polish: progress, course icons, DDL colors ── */
+.lp2-home .lp2-home-hero {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 255, 0.78)) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(18px) saturate(1.18);
+}
+
+.lp2-home .lp2-home-tutor-card {
+  width: min(360px, 44%) !important;
+  padding: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+.lp2-home .lp2-home-tutor-card img {
+  border-radius: 24px !important;
+  filter: drop-shadow(0 16px 28px rgba(80, 58, 138, 0.14));
+}
+
+.lp2-home .lp2-overview-card {
+  background:
+    radial-gradient(circle at 17% 26%, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0) 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(246, 243, 255, 0.72)) !important;
+  border: 1px solid rgba(215, 205, 242, 0.72) !important;
+  box-shadow: 0 18px 42px rgba(92, 66, 154, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.lp2-home .lp2-overview-card .ant-progress {
+  padding: 10px !important;
+  border-radius: 999px !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(240, 235, 255, 0.72)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), 0 16px 34px rgba(82, 61, 143, 0.14) !important;
+}
+
+.lp2-home .lp2-progress-center strong {
+  color: #4C1D95 !important;
+  letter-spacing: 0 !important;
+}
+
+.lp2-home .lp2-progress-center small {
+  color: #7A6E9B !important;
+  font-weight: 750 !important;
+}
+
+.lp2-home .lp2-overview-metrics span {
+  padding: 12px 14px !important;
+  border: 1px solid rgba(226, 219, 247, 0.72) !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.62) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
+}
+
+.lp2-course-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 8px 18px rgba(76, 29, 149, 0.12);
+}
+
+.lp2-course-icon.sm { width: 30px; height: 30px; font-size: 15px; border-radius: 11px; }
+.lp2-course-icon.md { width: 38px; height: 38px; font-size: 18px; }
+.lp2-course-icon.lg { width: 46px; height: 46px; font-size: 22px; border-radius: 16px; }
+
+.lp2-course-icon.violet { background: linear-gradient(135deg, #6B46C1, #9F7AEA); }
+.lp2-course-icon.sky { background: linear-gradient(135deg, #2F80ED, #56CCF2); }
+.lp2-course-icon.indigo { background: linear-gradient(135deg, #4C51BF, #7C3AED); }
+.lp2-course-icon.emerald { background: linear-gradient(135deg, #059669, #34D399); }
+.lp2-course-icon.blue { background: linear-gradient(135deg, #2563EB, #60A5FA); }
+.lp2-course-icon.red { background: linear-gradient(135deg, #DC2626, #F87171); }
+.lp2-course-icon.lime { background: linear-gradient(135deg, #65A30D, #A3E635); }
+.lp2-course-icon.amber { background: linear-gradient(135deg, #D97706, #FBBF24); }
+.lp2-course-icon.gold { background: linear-gradient(135deg, #B7791F, #F6C453); }
+.lp2-course-icon.rose { background: linear-gradient(135deg, #E11D48, #FDA4AF); }
+.lp2-course-icon.pink { background: linear-gradient(135deg, #DB2777, #F9A8D4); }
+.lp2-course-icon.purple { background: linear-gradient(135deg, #7E22CE, #C084FC); }
+.lp2-course-icon.green { background: linear-gradient(135deg, #16A34A, #86EFAC); }
+.lp2-course-icon.teal { background: linear-gradient(135deg, #0F766E, #5EEAD4); }
+.lp2-course-icon.brown { background: linear-gradient(135deg, #92400E, #D6A15F); }
+.lp2-course-icon.slate { background: linear-gradient(135deg, #475569, #94A3B8); }
+.lp2-course-icon.navy { background: linear-gradient(135deg, #1E3A8A, #647DEE); }
+
+.lp2-home .lp2-task-row {
+  grid-template-columns: 30px minmax(0, 1fr) auto !important;
+  border-radius: 16px !important;
+}
+
+.lp2-home .lp2-task-row.priority-P0 {
+  background: linear-gradient(90deg, rgba(255, 247, 245, 0.94), rgba(255, 255, 255, 0.9)) !important;
+}
+
+.lp2-home .lp2-task-row.priority-P1 {
+  background: linear-gradient(90deg, rgba(255, 251, 234, 0.96), rgba(255, 255, 255, 0.9)) !important;
+}
+
+.lp2-home .lp2-task-row.priority-P2 {
+  background: linear-gradient(90deg, rgba(245, 243, 255, 0.9), rgba(255, 255, 255, 0.9)) !important;
+}
+
+.lp2-home .lp2-task-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.lp2-home .lp2-task-meta em {
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  padding: 4px 9px;
+}
+
+.lp2-home .priority-P0 .lp2-task-meta em { background: #EA580C; }
+.lp2-home .priority-P1 .lp2-task-meta em { background: #B7791F; }
+.lp2-home .priority-P2 .lp2-task-meta em { background: #6B46C1; }
+
+.lp2-home .lp2-task-meta time {
+  color: var(--lp2-muted);
+  font-size: 12px;
+}
+
+.lp2-home .lp2-update-row,
+.lp2-home .lp2-course-progress-row {
+  grid-template-columns: 30px minmax(0, 1fr) auto !important;
+}
+
+.lp2-home .lp2-course-progress-row {
+  grid-template-columns: 30px minmax(128px, 1.2fr) minmax(100px, 0.8fr) 42px !important;
+}
+
+.lp2-home .lp2-card-link,
+.lp2-home .lp2-card-link:hover,
+.lp2-home .lp2-card-link:active,
+.lp2-home .lp2-card-link:focus {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.lp2-home .lp2-card:hover {
+  transform: none !important;
 }

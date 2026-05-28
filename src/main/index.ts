@@ -21,7 +21,7 @@ import {
   restoreApiSessionFromDisk,
   setCachedCreds,
 } from './services/learn'
-import { startTracking, pauseTracking, resumeTracking } from './services/stats'
+import { startTracking, pauseTracking, resumeTracking, stopTracking } from './services/stats'
 
 const isDev = !app.isPackaged
 const startHidden = process.argv.includes('--hidden') || process.argv.includes('--background')
@@ -241,10 +241,13 @@ app.whenReady().then(async () => {
   startSessionKeepAlive()
 
   tryAutoLogin().then((loggedIn) => {
+    if (loggedIn) startTracking()
     mainWindow?.webContents.send('auto-login-result', loggedIn)
   })
+})
 
-  startTracking()
+app.on('before-quit', () => {
+  stopTracking()
 })
 
 app.on('window-all-closed', () => {

@@ -103,6 +103,14 @@ export interface AppSettings {
   launchAtStartup?: boolean
   aiAutoCompleteAcknowledged: boolean
   tutorStyle?: 'cute' | 'serious'
+  mailMode?: 'web' | 'imap'
+  mailImapHost?: string
+  mailImapPort?: number
+  mailImapTls?: boolean
+  mailSmtpHost?: string
+  mailSmtpPort?: number
+  mailSmtpTls?: boolean
+  mailUsername?: string
 }
 
 // AI homework types
@@ -196,4 +204,5 @@ export interface RecentUpdateItem {
 export interface StatsDailyRecord {
   dailyMinutes: Record<string, number>
   lastActiveDate: string
+  loginDays?: string[]
 }
