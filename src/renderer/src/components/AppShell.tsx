@@ -26,6 +26,7 @@ import { useAuthStore } from '../store/auth'
 import { useDownloadStore } from '../store/downloads'
 import TsinghuaLogo from './TsinghuaLogo'
 import WindowControls from './WindowControls'
+import CourseIcon from './CourseIcon'
 
 const { Sider, Header, Content } = Layout
 
@@ -76,8 +77,6 @@ export default function AppShell() {
     || courses.find((course) => course.id === selectedCourseId)
     || courses[0]
   const primaryCourseId = courseId || selectedCourse?.id || courses[0]?.id
-  const selectedCourseIndex = Math.max(0, courses.findIndex((course) => course.id === selectedCourse?.id))
-  const courseProgress = Math.min(92, 68 + selectedCourseIndex * 3)
   const activeDownloadCount = downloads.filter((download) => download.status === 'downloading').length
   const topbarMode = isHomeRoute
     ? 'home'
@@ -469,11 +468,6 @@ export default function AppShell() {
             <h1>{selectedCourse.name}</h1>
             <p>{selectedCourse.teacher || '课程教师'} · {currentSemester?.name || '当前学期'}</p>
           </div>
-          <div className="lp2-context-stats">
-            <span><small>学习进度</small><strong>{courseProgress}%</strong></span>
-            <span><small>待完成任务</small><strong>2</strong></span>
-            <span><small>最近更新</small><strong>1 小时前</strong></span>
-          </div>
           <nav className="lp2-course-tabs" aria-label="课程标签">
             {tabs.map((tab) => (
               <button
@@ -621,9 +615,8 @@ export default function AppShell() {
         <div className="lp2-course-section">
           <div className="lp2-section-label">我的课程</div>
           <div className="lp2-course-list">
-            {courses.map((course, index) => {
+            {courses.map((course) => {
               const active = isCourseRoute && course.id === courseId
-              const tone = ['purple', 'green', 'red', 'slate', 'blue'][index % 5]
               return (
                 <button
                   key={course.id}
@@ -631,12 +624,11 @@ export default function AppShell() {
                   type="button"
                   onClick={() => handleCourseSelect(course.id)}
                 >
-                  <span className={`lp2-course-mark ${tone}`}>{String.fromCharCode(65 + (index % 26))}</span>
+                  <CourseIcon courseName={course.name} size="sm" />
                   <span className="lp2-course-copy">
                     <span className="lp2-course-name">{course.name}</span>
                     <span className="lp2-course-meta">{course.teacher || '课程教师'}</span>
                   </span>
-                  {index < 2 && <span className="lp2-course-dot" />}
                 </button>
               )
             })}

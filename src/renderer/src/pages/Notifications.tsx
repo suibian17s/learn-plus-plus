@@ -85,6 +85,35 @@ export default function NotificationsPage() {
     }
   }
 
+  async function summarizeAllNotices() {
+    const source = notices || []
+    if (!source.length) return
+    setSummaryOpen(true)
+    setSummaryLoading(true)
+    setSummaryText('')
+    try {
+      const content = source.slice(0, 40).map((notice: any, index: number) => {
+        const plainContent = (notice.htmlContent || notice.content || '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        return [
+          `#${index + 1} ${notice.title || '无标题'}`,
+          `发布人：${notice.publisher || '未知'}`,
+          `时间：${notice.publishTime || ''}`,
+          `内容：${plainContent.slice(0, 1200)}`,
+        ].join('\n')
+      }).join('\n\n')
+      const prompt = `请总结这个课程的全部公告，按重要事项、时间安排、需要学生行动、附件/材料线索四类整理，最后给出优先级建议。\n\n${content}`
+      const result = await window.learn.hwai.tutorAsk(courseId!, prompt)
+      setSummaryText(result.content || '总结生成失败')
+    } catch (err: any) {
+      setSummaryText('总结生成失败：' + (err.message || '未知错误'))
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
   return (
     <div>
       <style>
@@ -100,8 +129,11 @@ export default function NotificationsPage() {
           }
         `}
       </style>
-      <div className="lp2-course-local-toolbar">
+      <div className="lp2-course-local-toolbar lp2-notice-toolbar">
         <Input prefix={<SearchOutlined />} placeholder="搜索公告" allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+        <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={summarizeAllNotices}>
+          甘蔗 Tutor 总结
+        </Button>
       </div>
 
       <List
@@ -110,31 +142,6 @@ export default function NotificationsPage() {
           <List.Item
             onClick={() => setDetailId(item.id)}
             style={{ cursor: 'pointer', padding: '14px 0' }}
-            actions={[
-              <Button
-                key="tutor"
-                className="lp2-green-button"
-                size="small"
-                icon={<RobotOutlined />}
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  const plainContent = (item.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-                  setSummaryOpen(true)
-                  setSummaryLoading(true)
-                  setSummaryText('')
-                  try {
-                    const prompt = `请总结以下课程公告：\n标题：${item.title || ''}\n发布人：${item.publisher || ''}\n时间：${item.publishTime || ''}\n内容：${plainContent.slice(0, 3000)}`
-                    const result = await window.learn.hwai.tutorAsk(courseId!, prompt)
-                    setSummaryText(result.content || '总结生成失败')
-                  } catch (err: any) {
-                    setSummaryText('总结生成失败：' + (err.message || '未知错误'))
-                  }
-                  setSummaryLoading(false)
-                }}
-              >
-                甘蔗 Tutor
-              </Button>
-            ]}
           >
             <List.Item.Meta
               title={

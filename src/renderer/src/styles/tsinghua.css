@@ -6856,3 +6856,89 @@ html.lp2-window-closing .login-v2-frame {
   background: transparent !important;
   outline: none !important;
 }
+
+/* ── Final course/home alignment pass ── */
+.lp2-home .lp2-overview-card,
+.lp2-home .lp2-focus-card,
+.lp2-home .lp2-course-progress-card,
+.lp2-home .lp2-updates-card {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(236, 229, 245, 0.92) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 12px 30px rgba(84, 60, 132, 0.07) !important;
+  backdrop-filter: none !important;
+}
+
+.lp2-home .lp2-overview-metrics span {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.lp2-home .lp2-task-list,
+.lp2-home .lp2-course-progress-list,
+.lp2-home .lp2-update-list {
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  padding-right: 2px !important;
+}
+
+.lp2-home .lp2-task-list::-webkit-scrollbar,
+.lp2-home .lp2-course-progress-list::-webkit-scrollbar,
+.lp2-home .lp2-update-list::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.lp2-course-item {
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+}
+
+.lp2-course-item .lp2-course-icon {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 14px !important;
+  border-radius: 10px !important;
+}
+
+.lp2-course-dot {
+  display: none !important;
+}
+
+.lp2-topbar.course {
+  height: 106px !important;
+  padding: 18px 184px 0 34px !important;
+}
+
+.lp2-course-context-head {
+  grid-template-columns: minmax(0, 1fr) !important;
+  row-gap: 14px !important;
+}
+
+.lp2-course-tabs {
+  grid-column: 1 / -1 !important;
+}
+
+.lp2-context-stats {
+  display: none !important;
+}
+
+.lp2-notice-toolbar {
+  grid-template-columns: minmax(220px, 360px) max-content !important;
+  grid-auto-flow: initial !important;
+  grid-auto-columns: initial !important;
+  align-items: center !important;
+  gap: 14px !important;
+  margin-bottom: 22px !important;
+}
+
+.lp2-notice-toolbar .ant-input-affix-wrapper {
+  width: 100% !important;
+}
+
+.lp2-notice-toolbar .ant-btn {
+  min-width: 154px !important;
+}
