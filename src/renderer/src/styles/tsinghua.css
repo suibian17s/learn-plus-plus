@@ -6942,3 +6942,78 @@ html.lp2-window-closing .login-v2-frame {
 .lp2-notice-toolbar .ant-btn {
   min-width: 154px !important;
 }
+
+/* ── Repair course header: preserve previous spacing while hiding stat cards ── */
+.lp2-topbar.course {
+  height: 146px !important;
+  padding: 24px 184px 0 34px !important;
+}
+
+.lp2-course-context-head {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(540px, 670px) !important;
+  grid-template-rows: auto auto !important;
+  column-gap: 42px !important;
+  row-gap: 22px !important;
+  align-items: start !important;
+}
+
+.lp2-context-stats-placeholder {
+  display: flex !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.lp2-course-context-head .lp2-course-tabs {
+  grid-column: 1 / -1 !important;
+  gap: 24px !important;
+  min-height: 48px !important;
+  border-top: 0 !important;
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+@media (max-width: 1360px) {
+  .lp2-course-context-head {
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 500px) !important;
+    column-gap: 28px !important;
+  }
+}
+
+/* ── Home list rhythm: keep the three list cards visually identical ── */
+.lp2-home .lp2-task-list,
+.lp2-home .lp2-course-progress-list,
+.lp2-home .lp2-update-list {
+  display: grid !important;
+  gap: 14px !important;
+  align-content: start !important;
+}
+
+.lp2-home .lp2-task-row,
+.lp2-home .lp2-course-progress-row,
+.lp2-home .lp2-update-row {
+  min-height: 44px !important;
+  height: 44px !important;
+  padding: 0 !important;
+  display: grid !important;
+  align-items: center !important;
+  gap: 12px !important;
+  background: #FFFFFF !important;
+}
+
+.lp2-home .lp2-task-row,
+.lp2-home .lp2-update-row {
+  grid-template-columns: 30px minmax(0, 1fr) auto !important;
+}
+
+.lp2-home .lp2-course-progress-row {
+  grid-template-columns: 30px minmax(0, 1fr) minmax(100px, 0.8fr) 42px !important;
+}
+
+.lp2-home .lp2-task-row > span:nth-child(2),
+.lp2-home .lp2-update-row > span:nth-child(2) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+}

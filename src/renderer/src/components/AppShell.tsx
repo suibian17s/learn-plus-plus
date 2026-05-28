@@ -468,6 +468,7 @@ export default function AppShell() {
             <h1>{selectedCourse.name}</h1>
             <p>{selectedCourse.teacher || '课程教师'} · {currentSemester?.name || '当前学期'}</p>
           </div>
+          <div className="lp2-context-stats lp2-context-stats-placeholder" aria-hidden="true" />
           <nav className="lp2-course-tabs" aria-label="课程标签">
             {tabs.map((tab) => (
               <button
