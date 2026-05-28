@@ -111,74 +111,198 @@ export async function composeMail(params: { to: string; subject: string; body: s
 const LIST_CACHE_MS = 5 * 60 * 1000
 const DETAIL_CACHE_MS = 30 * 60 * 1000
 
-// ── DOM scraping (Coremail selectors confirmed 2026-05-02) ──
+// ── DOM scraping (Coremail selectors confirmed 2026-05-02, with defensive fallbacks) ──
 
 const MAIL_LIST_SCRIPT = `
 (function () {
   var items = [];
-  var rows = document.querySelectorAll('tbody.j-mail-list tr.j-mail');
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var mid = row.getAttribute('mid');
-    if (!mid) continue;
+  var candidates = [];
+  var seenNode = typeof Set !== 'undefined' ? new Set() : null;
+  var seenId = {};
+  var selectors = [
+    'tbody.j-mail-list tr.j-mail',
+    'tr.j-mail',
+    'tr[mid]',
+    'tr[data-mid]',
+    'tr[mailid]',
+    'tr[data-mailid]',
+    'tr[uid]',
+    'li[mid]',
+    'li[data-mid]',
+    'li[mailid]',
+    'li[data-mailid]',
+    'div[mid]',
+    'div[data-mid]',
+    'div[mailid]',
+    'div[data-mailid]',
+    '.j-mail',
+    '.mail-item',
+    '.mail-row',
+    '[class*="mail"][class*="item"]',
+    '[class*="mail"][class*="row"]',
+    '[class*="message"][class*="item"]'
+  ];
 
-    // Subject
-    var subEl = row.querySelector('td.subject-item span.subject');
-    var subject = subEl ? subEl.textContent.trim() : '(无主题)';
-
-    // Sender — from td.fromto, prefer title attribute
-    var fromEl = row.querySelector('td.fromto');
-    var from = '';
-    if (fromEl) {
-      from = (fromEl.getAttribute('title') || fromEl.textContent || '').trim();
-    }
-
-    // Date — td with time/date class
-    var dateEl = row.querySelector('td[class*="time"], td[class*="date"], td.time, td.date');
-    var date = dateEl ? dateEl.textContent.trim() : '';
-
-    // Read state
-    var read = row.classList.contains('read');
-
-    // Starred
-    var html = row.innerHTML || '';
-    var starred = /star|★|⭐|fav|flagged/i.test(html);
-
-    // Preview — try adjacent cells or snippet
-    var preview = '';
-    var previewEl = row.querySelector('td[class*="preview"], td[class*="snippet"], td[class*="brief"]');
-    if (previewEl) preview = previewEl.textContent.trim();
-
-    items.push({
-      id: mid, subject: subject, from: from, to: '',
-      date: date, preview: preview,
-      starred: starred, read: read
-    });
-
-    if (items.length >= 100) break;
+  function clean(value) {
+    return (value || '').replace(/\\s+/g, ' ').trim();
   }
 
-  // If no rows found with j-mail-list, try a broader search
-  if (items.length === 0) {
-    var fallback = document.querySelectorAll('tr[mid]');
-    for (var f = 0; f < fallback.length && items.length < 100; f++) {
-      var fr = fallback[f];
-      var fmid = fr.getAttribute('mid');
-      if (!fmid) continue;
-      var fsub = fr.querySelector('td.subject-item span.subject, span.subject, a[href*="mid="], a[href*="readmail"]');
-      var ffrom = fr.querySelector('td.fromto, td[class*="from"]');
-      var fdate = fr.querySelector('td[class*="time"], td[class*="date"]');
-      items.push({
-        id: fmid,
-        subject: fsub ? fsub.textContent.trim() : '(无主题)',
-        from: ffrom ? (ffrom.getAttribute('title') || ffrom.textContent).trim() : '',
-        to: '',
-        date: fdate ? fdate.textContent.trim() : '',
-        preview: '',
-        starred: false,
-        read: fr.classList.contains('read')
-      });
+  function text(node) {
+    return clean(node ? (node.innerText || node.textContent || '') : '');
+  }
+
+  function attr(node, names) {
+    for (var i = 0; i < names.length; i++) {
+      var value = node.getAttribute && node.getAttribute(names[i]);
+      if (value) return clean(value);
     }
+    return '';
+  }
+
+  function firstText(root, list) {
+    for (var i = 0; i < list.length; i++) {
+      var el = root.querySelector(list[i]);
+      if (!el) continue;
+      var value = clean(el.getAttribute('title') || el.getAttribute('aria-label') || text(el));
+      if (value) return value;
+    }
+    return '';
+  }
+
+  function firstHref(root) {
+    var link = root.matches && root.matches('a[href]') ? root : root.querySelector('a[href]');
+    return link ? (link.getAttribute('href') || '') : '';
+  }
+
+  function deriveId(row, index) {
+    var id = attr(row, ['mid', 'data-mid', 'mailid', 'data-mailid', 'uid', 'data-uid', 'mail-id', 'data-id', 'id']);
+    var href = firstHref(row);
+    if (!id && href) {
+      var matched = href.match(/[?&](?:mid|mailid|uid|id)=([^&#]+)/i) || href.match(/(?:readmail|mail)[^?#]*[?&]([^&#]+)/i);
+      if (matched) {
+        try { id = decodeURIComponent(matched[1]); }
+        catch(e) { id = matched[1]; }
+      }
+      else id = href;
+    }
+    if (!id) id = 'dom-index-' + index;
+    row.setAttribute('data-learnpp-mail-id', id);
+    return id;
+  }
+
+  function add(selector) {
+    var nodes = document.querySelectorAll(selector);
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (seenNode && seenNode.has(node)) continue;
+      if (seenNode) seenNode.add(node);
+      if (text(node).length >= 2) candidates.push(node);
+    }
+  }
+
+  for (var s = 0; s < selectors.length; s++) add(selectors[s]);
+
+  if (candidates.length === 0) {
+    var links = document.querySelectorAll('a[href*="mid="], a[href*="mailid="], a[href*="readmail"], a[href*="mail"]');
+    for (var l = 0; l < links.length; l++) {
+      var holder = links[l].closest('tr, li, .j-mail, .mail-item, .mail-row, div[class*="item"], div[class*="row"]') || links[l];
+      if (!seenNode || !seenNode.has(holder)) {
+        if (seenNode) seenNode.add(holder);
+        candidates.push(holder);
+      }
+    }
+  }
+
+  function lineFallback(row, subject, from, date) {
+    var rows = (row.innerText || row.textContent || '').split(/\\n|\\s{2,}/);
+    var lines = [];
+    for (var i = 0; i < rows.length; i++) {
+      var value = clean(rows[i]);
+      if (value && value !== subject && value !== from && value !== date) lines.push(value);
+    }
+    return lines;
+  }
+
+  function findDate(row) {
+    var direct = firstText(row, [
+      'td[class*="time"]',
+      'td[class*="date"]',
+      '[class*="time"]',
+      '[class*="date"]',
+      'time'
+    ]);
+    if (direct) return direct;
+    var matched = text(row).match(/(?:\\d{4}[-/.年]\\d{1,2}[-/.月]\\d{1,2}日?\\s*\\d{0,2}:?\\d{0,2}|\\d{1,2}[-/.]\\d{1,2}\\s+\\d{1,2}:\\d{2}|今天\\s*\\d{1,2}:\\d{2}|昨天\\s*\\d{1,2}:\\d{2})/);
+    return matched ? clean(matched[0]) : '';
+  }
+
+  for (var i = 0; i < candidates.length && items.length < 150; i++) {
+    var row = candidates[i];
+    var id = deriveId(row, i);
+    if (seenId[id]) continue;
+
+    var subject = firstText(row, [
+      'td.subject-item span.subject',
+      'span.subject',
+      '.subject',
+      '[class*="subject"]',
+      '.title',
+      '[class*="title"]',
+      'a[title]',
+      'a[href*="mid="]',
+      'a[href*="readmail"]',
+      'a[href*="mail"]'
+    ]);
+    var from = firstText(row, [
+      'td.fromto',
+      'td[class*="from"]',
+      '[class*="from"]',
+      '[class*="sender"]',
+      '[class*="author"]',
+      '[title*="@"]'
+    ]);
+    var date = findDate(row);
+
+    var lines = lineFallback(row, subject, from, date);
+    if (!subject && lines.length) subject = lines[0];
+    if (!from && lines.length > 1) from = lines[1];
+
+    subject = clean(subject) || '(无主题)';
+    if (/^(回复|转发|删除|更多|星标|未读|已读)$/i.test(subject) && lines.length) subject = lines[0] || '(无主题)';
+
+    var preview = firstText(row, [
+      '[class*="preview"]',
+      '[class*="snippet"]',
+      '[class*="summary"]',
+      '[class*="brief"]',
+      '[class*="abstract"]'
+    ]);
+    if (!preview) {
+      var rest = [];
+      for (var r = 0; r < lines.length; r++) {
+        if (lines[r] !== subject && lines[r] !== from && lines[r] !== date) rest.push(lines[r]);
+      }
+      preview = rest.slice(0, 3).join(' ');
+    }
+    preview = clean(preview).slice(0, 180);
+
+    var className = String(row.className || '');
+    var html = row.innerHTML || '';
+    var unread = /unread|new|未读/i.test(className + ' ' + html);
+    var read = unread ? false : !/unread|未读/i.test(text(row));
+    var starred = /starred|flagged|favorite|fav|\\bstar\\b|★|⭐|已星标/i.test(className + ' ' + html);
+
+    seenId[id] = true;
+    items.push({
+      id: id,
+      subject: subject,
+      from: clean(from),
+      to: '',
+      date: clean(date),
+      preview: preview,
+      starred: starred,
+      read: read
+    });
   }
 
   return JSON.stringify(items);
@@ -187,13 +311,26 @@ const MAIL_LIST_SCRIPT = `
 
 const MAILBOX_CHECK_SCRIPT = `
 (function () {
-  var rows = document.querySelectorAll('tbody.j-mail-list tr.j-mail, tr[mid]');
-  var hasMailItems = rows.length > 0;
+  var rows = document.querySelectorAll(
+    'tbody.j-mail-list tr.j-mail, tr.j-mail, tr[mid], tr[data-mid], tr[mailid], tr[data-mailid], ' +
+    'li[mid], li[data-mid], div[mid], div[data-mid], .j-mail, .mail-item, .mail-row, ' +
+    '[class*="mail"][class*="item"], [class*="message"][class*="item"]'
+  );
+  var bodyText = ((document.body && (document.body.innerText || document.body.textContent)) || '').replace(/\\s+/g, ' ');
   var title = document.title || '';
-  var isLogin = /login|登录|Log In|Sign In|passport|auth/i.test(title);
+  var hasMailItems = rows.length > 0;
+  var hasMailboxShell = /收件箱|写信|写邮件|通讯录|已发送|草稿箱|Inbox|Compose|Sent|Draft/i.test(bodyText + ' ' + title);
+  var hasPasswordField = !!document.querySelector('input[type="password"]');
+  var asksForPassword = /密码|验证码|登录|login|sign in|passport|auth/i.test(bodyText + ' ' + title);
+  var isLogin = /login|登录|Log In|Sign In|passport|auth/i.test(title) ||
+    (hasPasswordField && !hasMailItems) ||
+    (asksForPassword && !hasMailboxShell && !hasMailItems);
   return JSON.stringify({
-    ok: !isLogin && (hasMailItems || document.querySelectorAll('a[href]').length > 15),
-    mailCount: rows.length, title: title, isLogin: isLogin
+    ok: !isLogin && (hasMailItems || hasMailboxShell),
+    mailCount: rows.length,
+    title: title,
+    isLogin: isLogin,
+    hasMailboxShell: hasMailboxShell
   });
 })()
 `
@@ -312,7 +449,15 @@ export async function loginMail(): Promise<boolean> {
         const status = JSON.parse(raw)
         if (status.ok && !status.isLogin) {
           clearInterval(pollInterval)
+          mailMode = 'web'
           mailLoggedIn = true
+          listCache = null
+          detailCache.clear()
+          try {
+            await ensureFolderReady(mailWindow, 'inbox')
+          } catch {
+            // The next list request will retry folder preparation.
+          }
           mailWindow.hide()
           if (loginResolve) { loginResolve(true); loginResolve = null }
         }
@@ -359,22 +504,121 @@ function waitForLoad(win: BrowserWindow, ms: number): Promise<void> {
   })
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 // ── Mail list ──
 
 async function scrollToLoadAll(win: BrowserWindow): Promise<void> {
   for (let i = 0; i < 20; i++) {
     const scrolled = await win.webContents.executeJavaScript(`
       (function () {
-        var list = document.querySelector('tbody.j-mail-list');
-        var container = list ? list.parentElement : document.scrollingElement || document.body;
-        var oldScroll = container.scrollTop || 0;
-        container.scrollTop = container.scrollHeight;
-        return container.scrollTop > oldScroll;
+        var roots = [];
+        var list = document.querySelector('tbody.j-mail-list, .j-mail-list, [class*="mail"][class*="list"], [class*="message"][class*="list"]');
+        if (list && list.parentElement) roots.push(list.parentElement);
+        var candidates = document.querySelectorAll('[class*="scroll"], [class*="list"], [class*="content"], main, section');
+        for (var i = 0; i < candidates.length; i++) roots.push(candidates[i]);
+        roots.push(document.scrollingElement || document.documentElement || document.body);
+
+        var moved = false;
+        for (var r = 0; r < roots.length; r++) {
+          var container = roots[r];
+          if (!container || container.scrollHeight <= container.clientHeight) continue;
+          var oldScroll = container.scrollTop || 0;
+          container.scrollTop = container.scrollHeight;
+          if ((container.scrollTop || 0) > oldScroll) moved = true;
+        }
+        window.scrollTo(0, document.body ? document.body.scrollHeight : 0);
+        return moved;
       })()
     `)
     if (!scrolled) break
-    await new Promise(r => setTimeout(r, 600))
+    await delay(600)
   }
+}
+
+async function clickFolderByKeywords(win: BrowserWindow, keywords: string[]): Promise<boolean> {
+  const raw = await win.webContents.executeJavaScript(`
+    (function () {
+      var kws = ${JSON.stringify(keywords)};
+      function clean(value) { return (value || '').replace(/\\s+/g, ' ').trim(); }
+      var selectors = [
+        'a[href*="folder"]',
+        'a[href*="sent"]',
+        'a[href*="draft"]',
+        'a[href*="trash"]',
+        '.folder-item',
+        '.nav-folder',
+        '[class*="folder"]',
+        '[class*="nav_item"]',
+        '[class*="menu"] a',
+        '.left_menu a',
+        '.sidebar a',
+        '.tree a',
+        'button',
+        'a',
+        'span[onclick]',
+        'li[onclick]'
+      ];
+      var nodes = [];
+      var seen = typeof Set !== 'undefined' ? new Set() : null;
+      for (var s = 0; s < selectors.length; s++) {
+        var found = document.querySelectorAll(selectors[s]);
+        for (var i = 0; i < found.length; i++) {
+          if (seen && seen.has(found[i])) continue;
+          if (seen) seen.add(found[i]);
+          nodes.push(found[i]);
+        }
+      }
+      for (var n = 0; n < nodes.length; n++) {
+        var text = clean(nodes[n].innerText || nodes[n].textContent || nodes[n].getAttribute('title'));
+        if (!text) continue;
+        for (var k = 0; k < kws.length; k++) {
+          if (text.indexOf(kws[k]) >= 0) {
+            nodes[n].click();
+            return JSON.stringify({ clicked: true, label: text });
+          }
+        }
+      }
+      return JSON.stringify({ clicked: false });
+    })()
+  `)
+  try {
+    return !!JSON.parse(raw).clicked
+  } catch {
+    return false
+  }
+}
+
+async function ensureFolderReady(win: BrowserWindow, folder: string): Promise<void> {
+  try {
+    const raw = await win.webContents.executeJavaScript(MAILBOX_CHECK_SCRIPT)
+    const status = JSON.parse(raw)
+    if (!status.ok || status.isLogin) {
+      win.loadURL(MAIL_BASE)
+      await waitForLoad(win, 2500)
+    }
+  } catch {
+    win.loadURL(MAIL_BASE)
+    await waitForLoad(win, 2500)
+  }
+
+  const folderKeywords: Record<string, string[]> = {
+    inbox: ['收件箱', 'Inbox', 'INBOX'],
+    sent: ['已发送', '已发邮件', '发件箱', 'Sent'],
+    drafts: ['草稿', '草稿箱', 'Draft'],
+    trash: ['已删除', '删除', '废纸篓', 'Trash'],
+  }
+  const clicked = await clickFolderByKeywords(win, folderKeywords[folder] || [folder])
+  await delay(clicked ? 2200 : 900)
+  await scrollToLoadAll(win)
+}
+
+async function scrapeMailList(win: BrowserWindow): Promise<MailItem[]> {
+  const raw = await win.webContents.executeJavaScript(MAIL_LIST_SCRIPT)
+  const items: MailItem[] = JSON.parse(raw)
+  return items.filter((item) => item.id && item.subject)
 }
 
 async function getMailListWeb(folder: string): Promise<{ mails: MailItem[]; total: number }> {
@@ -385,46 +629,15 @@ async function getMailListWeb(folder: string): Promise<{ mails: MailItem[]; tota
 
   const win = await ensureMailWindow()
 
-  if (folder === 'inbox') {
-    // Don't reload — already on inbox after login. Scroll to load all.
-    await scrollToLoadAll(win)
-  } else {
-    // Navigate to folder: first ensure we're on inbox, then click folder link
-    const folderKeywords: Record<string, string[]> = {
-      sent: ['已发送', '已发邮件', '发件箱'],
-      drafts: ['草稿', '草稿箱'],
-      trash: ['已删除', '删除', '废纸篓'],
-    }
-    const keywords = folderKeywords[folder] || [folder]
-    const clicked = await win.webContents.executeJavaScript(`
-      (function () {
-        var kws = ${JSON.stringify(keywords)};
-        // Try specific folder nav selectors first
-        var navLinks = document.querySelectorAll(
-          'a[href*="folder"], a[href*="sent"], a[href*="draft"], a[href*="trash"], ' +
-          '.folder-item, .nav-folder, [class*="folder"], [class*="nav_item"], ' +
-          '.left_menu a, .sidebar a, .menu a, .tree a'
-        );
-        var allLinks = navLinks.length > 0 ? navLinks : document.querySelectorAll('a, span[onclick], li[onclick]');
-        for (var i = 0; i < allLinks.length; i++) {
-          var t = (allLinks[i].textContent || '').trim();
-          for (var k = 0; k < kws.length; k++) {
-            if (t.indexOf(kws[k]) >= 0) {
-              allLinks[i].click();
-              return t;
-            }
-          }
-        }
-        return false;
-      })()
-    `)
-    // Wait for folder to load, then scroll
-    await new Promise(r => setTimeout(r, clicked ? 2500 : 500))
-    await scrollToLoadAll(win)
+  await ensureFolderReady(win, folder)
+  let items = await scrapeMailList(win)
+  if (items.length === 0) {
+    win.loadURL(MAIL_BASE)
+    await waitForLoad(win, 2600)
+    await ensureFolderReady(win, folder)
+    items = await scrapeMailList(win)
   }
 
-  const raw = await win.webContents.executeJavaScript(MAIL_LIST_SCRIPT)
-  const items: MailItem[] = JSON.parse(raw)
   listCache = { folder, mails: items, cachedAt: Date.now() }
   return { mails: items, total: items.length }
 }
@@ -443,11 +656,30 @@ async function getMailDetailWeb(mailId: string): Promise<MailDetail | null> {
   let bodyFound = false
 
   // Step 1: click the mail row to open preview/detail
-  const alreadyOnList = await win.webContents.executeJavaScript(`
+  await win.webContents.executeJavaScript(`
     (function () {
-      var row = document.querySelector('tr[mid="${mailId}"]');
+      var mailId = ${JSON.stringify(mailId)};
+      function attr(node, names) {
+        for (var i = 0; i < names.length; i++) {
+          var value = node.getAttribute && node.getAttribute(names[i]);
+          if (value === mailId) return true;
+        }
+        return false;
+      }
+      var nodes = document.querySelectorAll(
+        '[data-learnpp-mail-id], tr[mid], tr[data-mid], tr[mailid], tr[data-mailid], tr[uid], ' +
+        'li[mid], li[data-mid], div[mid], div[data-mid], .j-mail, .mail-item, .mail-row'
+      );
+      var row = null;
+      for (var i = 0; i < nodes.length; i++) {
+        if (attr(nodes[i], ['data-learnpp-mail-id', 'mid', 'data-mid', 'mailid', 'data-mailid', 'uid', 'data-uid', 'id'])) {
+          row = nodes[i];
+          break;
+        }
+      }
       if (!row) return false;
-      var link = row.querySelector('a[href]');
+      try { row.scrollIntoView({ block: 'center' }); } catch(e) {}
+      var link = row.querySelector('a[href*="read"], a[href*="mail"], a[href]');
       if (link) { link.click(); return true; }
       var sub = row.querySelector('td.subject-item');
       if (sub) { sub.click(); return true; }
@@ -455,7 +687,7 @@ async function getMailDetailWeb(mailId: string): Promise<MailDetail | null> {
       return true;
     })()
   `)
-  await new Promise(r => setTimeout(r, 2000))
+  await delay(2000)
 
   // Step 2: try to extract body (may be in preview pane or same page)
   let raw = await win.webContents.executeJavaScript(MAIL_DETAIL_SCRIPT)

@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Button, Form, Input, Tag, Select, Spin, Empty, Modal, message } from 'antd'
+import { Button, Empty, Form, Input, Modal, Spin, Tag, message } from 'antd'
 import {
+  DeleteOutlined,
+  ExportOutlined,
+  InboxOutlined,
+  LoginOutlined,
+  LogoutOutlined,
+  MailOutlined,
+  ReloadOutlined,
+  RobotOutlined,
   RollbackOutlined,
   ShareAltOutlined,
   StarFilled,
   StarOutlined,
-  LoginOutlined,
-  DeleteOutlined,
-  RobotOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
 
@@ -30,94 +35,161 @@ interface MailDetailData {
   attachments: { name: string; url: string }[]
 }
 
-const MAIL_FOLDER_OPTIONS = [
-  { value: 'all', label: '全部' },
-  { value: 'unread', label: '未读' },
-  { value: 'starred', label: '星标' },
-]
-
-const SORT_OPTIONS = [
-  { value: 'time', label: '时间排序' },
-  { value: 'star', label: '星标优先' },
-]
-
 const FOLDER_LABELS: Record<string, string> = {
-  inbox: '收件箱', sent: '已发送', drafts: '草稿箱', trash: '已删除',
+  inbox: '收件箱',
+  sent: '已发送',
+  drafts: '草稿箱',
+  trash: '已删除',
+}
+
+function normalizeText(value?: string): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
+}
+
+function stripHtml(value: string): string {
+  return value.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseMailTime(value: string): number {
+  const raw = normalizeText(value)
+  if (!raw) return 0
+
+  const now = new Date()
+  if (/今天/.test(raw)) {
+    const time = raw.match(/(\d{1,2}):(\d{2})/)
+    const d = new Date(now)
+    if (time) d.setHours(Number(time[1]), Number(time[2]), 0, 0)
+    return d.getTime()
+  }
+  if (/昨天/.test(raw)) {
+    const time = raw.match(/(\d{1,2}):(\d{2})/)
+    const d = new Date(now)
+    d.setDate(d.getDate() - 1)
+    if (time) d.setHours(Number(time[1]), Number(time[2]), 0, 0)
+    return d.getTime()
+  }
+
+  let normalized = raw
+    .replace(/[年月.]/g, '-')
+    .replace(/日/g, ' ')
+    .replace(/\//g, '-')
+  if (/^\d{1,2}-\d{1,2}/.test(normalized)) {
+    normalized = `${now.getFullYear()}-${normalized}`
+  }
+  const parsed = Date.parse(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function extractReplyAddress(from: string): string {
+  const angle = from.match(/<([^>]+)>/)
+  return normalizeText(angle?.[1] || from).replace(/^["']|["']$/g, '')
 }
 
 export default function MailboxPage() {
   const [searchParams] = useSearchParams()
   const folder = searchParams.get('folder') || 'inbox'
   const refreshToken = searchParams.get('refresh') || ''
+  const searchText = searchParams.get('q') || ''
+  const filter = searchParams.get('filter') || 'all'
+  const sortBy = searchParams.get('sort') || 'time'
 
   const [mails, setMails] = useState<MailItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mailLoggedIn, setMailLoggedIn] = useState<boolean | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [filter, setFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('time')
-  const [searchText, setSearchText] = useState('')
-
-  // Detail state
   const [detail, setDetail] = useState<MailDetailData | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryText, setSummaryText] = useState('')
-
-  // Compose state
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeMode, setComposeMode] = useState<'reply' | 'forward'>('reply')
   const [composeSending, setComposeSending] = useState(false)
   const [composeForm] = Form.useForm()
 
-  useEffect(() => {
-    ;(async () => {
-      try {
-        const s = await window.learn.mail.status()
-        setMailLoggedIn(s.loggedIn)
-      } catch {
-        setMailLoggedIn(false)
-      }
-    })()
-  }, [])
-
-  useEffect(() => {
-    setSearchText(searchParams.get('q') || '')
-    setFilter(searchParams.get('filter') || 'all')
-    setSortBy(searchParams.get('sort') || 'time')
-  }, [searchParams])
+  const folderLabel = FOLDER_LABELS[folder] || folder
 
   const loadMails = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const result = await window.learn.mail.list(folder)
-      setMails(result.mails)
-      if (result.mails.length > 0 && !selectedId) {
-        setSelectedId(result.mails[0].id)
-      }
+      setMails(result.mails || [])
     } catch (err: any) {
       setError(err?.message || '加载邮件失败')
+      setMails([])
     } finally {
       setLoading(false)
     }
-  }, [folder, selectedId])
+  }, [folder])
 
   useEffect(() => {
-    if (mailLoggedIn) { setLoading(true); loadMails() }
-  }, [mailLoggedIn])
+    let cancelled = false
+    ;(async () => {
+      try {
+        const status = await window.learn.mail.status()
+        if (!cancelled) setMailLoggedIn(status.loggedIn)
+      } catch {
+        if (!cancelled) setMailLoggedIn(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
-    if (mailLoggedIn) {
+    if (mailLoggedIn === true) {
       setSelectedId(null)
       setDetail(null)
       loadMails()
     }
-  }, [folder, mailLoggedIn, refreshToken])
+    if (mailLoggedIn === false) setLoading(false)
+  }, [folder, mailLoggedIn, refreshToken, loadMails])
 
-  // Load detail when selecting a mail
+  const filteredMails = useMemo(() => {
+    const q = searchText.trim().toLowerCase()
+    const list = mails.filter((mail) => {
+      if (filter === 'unread' && mail.read) return false
+      if (filter === 'starred' && !mail.starred) return false
+      if (!q) return true
+      return [mail.subject, mail.from, mail.preview].some((value) =>
+        normalizeText(value).toLowerCase().includes(q),
+      )
+    })
+
+    list.sort((a, b) => {
+      if (sortBy === 'star') {
+        const starDelta = Number(b.starred) - Number(a.starred)
+        if (starDelta !== 0) return starDelta
+      }
+      return parseMailTime(b.date) - parseMailTime(a.date)
+    })
+
+    return list
+  }, [filter, mails, searchText, sortBy])
+
+  useEffect(() => {
+    if (filteredMails.length === 0) {
+      if (selectedId) {
+        setSelectedId(null)
+        setDetail(null)
+      }
+      return
+    }
+    if (!selectedId || !filteredMails.some((mail) => mail.id === selectedId)) {
+      setSelectedId(filteredMails[0].id)
+    }
+  }, [filteredMails, selectedId])
+
+  const selected = filteredMails.find((mail) => mail.id === selectedId) || null
+  const unreadCount = mails.filter((mail) => !mail.read).length
+  const starredCount = mails.filter((mail) => mail.starred).length
+
   useEffect(() => {
     if (!selectedId || !mailLoggedIn) return
     let cancelled = false
@@ -135,90 +207,112 @@ export default function MailboxPage() {
             attachments: result.attachments || [],
           })
         }
-      } catch { /* ignore */ }
-      finally { if (!cancelled) setDetailLoading(false) }
+      } catch {
+        if (!cancelled) message.warning('邮件正文暂时无法读取，可打开原站查看')
+      } finally {
+        if (!cancelled) setDetailLoading(false)
+      }
     })()
     return () => { cancelled = true }
-  }, [selectedId, mailLoggedIn])
-
-  const filteredMails = useMemo(() => {
-    let list = [...mails]
-    if (searchText.trim()) {
-      const q = searchText.trim().toLowerCase()
-      list = list.filter((m) =>
-        m.subject.toLowerCase().includes(q) ||
-        m.from.toLowerCase().includes(q) ||
-        m.preview.toLowerCase().includes(q),
-      )
-    }
-    if (filter === 'unread') list = list.filter((m) => !m.read)
-    if (filter === 'starred') list = list.filter((m) => m.starred)
-    if (sortBy === 'star') {
-      list.sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0))
-    }
-    return list
-  }, [mails, searchText, filter, sortBy])
-
-  const selected = filteredMails.find((m) => m.id === selectedId) || filteredMails[0]
+  }, [mailLoggedIn, selectedId])
 
   async function handleLogin() {
+    setLoading(true)
     try {
-      const r = await window.learn.mail.login()
-      if (r.ok) { setMailLoggedIn(true); message.success('邮箱登录成功') }
-      else { message.error('邮箱登录超时，请重试') }
-    } catch { message.error('邮箱登录失败') }
+      const result = await window.learn.mail.login()
+      if (result.ok) {
+        setMailLoggedIn(true)
+        message.success('邮箱登录成功')
+      } else {
+        setLoading(false)
+        message.error('邮箱登录超时，请重试')
+      }
+    } catch {
+      setLoading(false)
+      message.error('邮箱登录失败')
+    }
+  }
+
+  async function handleLogout() {
+    await window.learn.mail.logout()
+    setMailLoggedIn(false)
+    setMails([])
+    setSelectedId(null)
+    setDetail(null)
+    message.success('已退出邮箱')
   }
 
   async function handleStar(mailId: string, starred: boolean) {
     try {
-      const r = await window.learn.mail.star(mailId, !starred)
-      if (r.ok) setMails((prev) => prev.map((m) => (m.id === mailId ? { ...m, starred: !starred } : m)))
-    } catch { message.error('操作失败') }
+      const result = await window.learn.mail.star(mailId, !starred)
+      if (result.ok) {
+        setMails((prev) => prev.map((mail) =>
+          mail.id === mailId ? { ...mail, starred: !starred } : mail,
+        ))
+      }
+    } catch {
+      message.error('星标操作失败')
+    }
   }
 
   async function handleDelete(mailId: string) {
     try {
-      const r = await window.learn.mail.delete(mailId)
-      if (r.ok) {
-        setMails((prev) => prev.filter((m) => m.id !== mailId))
-        if (selectedId === mailId) { setSelectedId(null); setDetail(null) }
+      const result = await window.learn.mail.delete(mailId)
+      if (result.ok) {
+        setMails((prev) => prev.filter((mail) => mail.id !== mailId))
+        if (selectedId === mailId) {
+          setSelectedId(null)
+          setDetail(null)
+        }
         message.success('已删除')
       }
-    } catch { message.error('删除失败') }
+    } catch {
+      message.error('删除失败')
+    }
   }
 
   async function handleTutorSummary() {
-    if (!detail) return
+    if (!detail && !selected) return
+    const subject = detail?.subject || selected?.subject || ''
+    const from = detail?.from || selected?.from || ''
+    const body = detail?.body ? stripHtml(detail.body) : selected?.preview || ''
+
     setSummaryOpen(true)
     setSummaryLoading(true)
     setSummaryText('')
     try {
-      // Strip HTML tags to get plain text for the AI
-      const plainText = detail.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-      const content = `发件人：${detail.from}\n主题：${detail.subject}\n\n${plainText}`
-      const askResult = await window.learn.hwai.tutorAsk('__mail__', `请总结以下邮件内容，提取关键信息：\n${content.slice(0, 4000)}`)
+      const content = `发件人：${from}\n主题：${subject}\n\n${body}`
+      const askResult = await window.learn.hwai.tutorAsk(
+        '__mail__',
+        `请总结以下邮件内容，提取关键信息、待办事项和时间节点：\n${content.slice(0, 4000)}`,
+      )
       setSummaryText(askResult.ok ? (askResult.content || '总结失败') : '总结生成失败，请稍后重试')
     } catch (err: any) {
-      setSummaryText('总结失败：' + (err.message || '未知错误'))
+      setSummaryText('总结失败：' + (err?.message || '未知错误'))
     } finally {
       setSummaryLoading(false)
     }
   }
 
   function handleConvertToFocus() {
-    if (!detail) return
-    message.success(`已将「${detail.subject}」加入今日重点列表`)
+    const subject = detail?.subject || selected?.subject
+    if (!subject) return
+    message.success(`已将「${subject}」加入今日重点列表`)
   }
 
   function openCompose(mode: 'reply' | 'forward') {
-    if (!detail) return
+    if (!selected && !detail) return
+    const subject = detail?.subject || selected?.subject || ''
+    const from = detail?.from || selected?.from || ''
+    const date = detail?.date || selected?.date || ''
+    const plainBody = detail?.body ? stripHtml(detail.body) : selected?.preview || ''
+
     setComposeMode(mode)
-    const sender = detail.from.replace(/<[^>]*>/g, '').trim()
     composeForm.setFieldsValue({
-      to: mode === 'reply' ? sender : '',
-      subject: (mode === 'reply' ? 'Re: ' : 'Fwd: ') + (detail.subject || selected?.subject || ''),
+      to: mode === 'reply' ? extractReplyAddress(from) : '',
+      subject: `${mode === 'reply' ? 'Re: ' : 'Fwd: '}${subject}`,
       body: mode === 'forward'
-        ? `\n\n---------- 转发的邮件 ----------\n发件人：${detail.from}\n日期：${detail.date}\n主题：${detail.subject}\n\n${detail.body.replace(/<[^>]+>/g, ' ')}`
+        ? `\n\n---------- 转发的邮件 ----------\n发件人：${from}\n日期：${date}\n主题：${subject}\n\n${plainBody}`
         : '',
     })
     setComposeOpen(true)
@@ -237,29 +331,38 @@ export default function MailboxPage() {
         message.success('邮件已发送')
         setComposeOpen(false)
       } else {
-        message.error(result.error || '发送失败，请使用"打开原站"手动发送')
+        message.error(result.error || '发送失败，请使用“打开原站”手动发送')
       }
     } catch {
-      // form validation failed
+      // Ant Design handles form validation messages.
     } finally {
       setComposeSending(false)
     }
   }
 
-  // ── Login prompt ──
   if (mailLoggedIn === false) {
     return (
-      <div className="lp2-mail-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Empty image={<LoginOutlined style={{ fontSize: 64, color: '#BDB0D5' }} />} description="尚未登录清华邮箱">
-          <Button type="primary" size="large" icon={<LoginOutlined />} onClick={handleLogin}>登录清华邮箱</Button>
-        </Empty>
+      <div className="lp2-mail-page lp2-mail-centered">
+        <section className="lp2-mail-login-card">
+          <span className="lp2-mail-login-icon"><LoginOutlined /></span>
+          <h2>登录清华邮箱</h2>
+          <p>登录后 learn++ 会在后台读取邮件列表，原站窗口会自动隐藏，需要时可以随时打开。</p>
+          <div className="lp2-mail-login-actions">
+            <Button type="primary" size="large" icon={<LoginOutlined />} onClick={handleLogin}>
+              登录邮箱
+            </Button>
+            <Button size="large" icon={<ExportOutlined />} onClick={() => window.learn.mail.show()}>
+              打开原站
+            </Button>
+          </div>
+        </section>
       </div>
     )
   }
 
   if (mailLoggedIn === null || loading) {
     return (
-      <div className="lp2-mail-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+      <div className="lp2-mail-page lp2-mail-centered">
         <Spin size="large" />
       </div>
     )
@@ -267,107 +370,159 @@ export default function MailboxPage() {
 
   if (error) {
     return (
-      <div className="lp2-mail-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Empty description={error}><Button onClick={loadMails}>重试</Button></Empty>
+      <div className="lp2-mail-page lp2-mail-centered">
+        <section className="lp2-mail-empty-state">
+          <span className="lp2-mail-empty-icon"><MailOutlined /></span>
+          <h2>邮件加载失败</h2>
+          <p>{error}</p>
+          <div className="lp2-mail-empty-actions">
+            <Button type="primary" icon={<ReloadOutlined />} onClick={loadMails}>重试</Button>
+            <Button icon={<ExportOutlined />} onClick={() => window.learn.mail.show()}>打开原站</Button>
+          </div>
+        </section>
       </div>
     )
   }
 
-  const folderLabel = FOLDER_LABELS[folder] || folder
-
   return (
     <div className="lp2-mail-page">
-      <div className="lp2-course-local-toolbar" style={{ marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-        <Input placeholder="搜索邮件" allowClear value={searchText}
-          onChange={(e) => setSearchText(e.target.value)} style={{ width: 200 }} />
-        <Select value={filter} onChange={setFilter} options={MAIL_FOLDER_OPTIONS} style={{ width: 96 }} />
-        <Select value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} style={{ width: 112 }} />
-        <span style={{ color: '#888', fontSize: 13 }}>{mails.length} 封</span>
-        <Button onClick={loadMails}>刷新</Button>
-        <Button onClick={() => window.learn.mail.show()}>打开原站</Button>
-      </div>
+      <section className="lp2-mail-statusbar">
+        <div>
+          <span className="lp2-mail-status-icon"><InboxOutlined /></span>
+          <strong>{folderLabel}</strong>
+          <small>{filteredMails.length} / {mails.length} 封</small>
+        </div>
+        <div className="lp2-mail-status-tags">
+          <Tag>{unreadCount} 未读</Tag>
+          <Tag>{starredCount} 星标</Tag>
+        </div>
+        <div className="lp2-mail-status-actions">
+          <Button icon={<ReloadOutlined />} onClick={loadMails}>刷新</Button>
+          <Button icon={<ExportOutlined />} onClick={() => window.learn.mail.show()}>打开原站</Button>
+          <Button icon={<LogoutOutlined />} onClick={handleLogout}>退出</Button>
+        </div>
+      </section>
+
       <div className="lp2-mail-layout">
-        <section className="lp2-mail-list">
+        <section className="lp2-mail-list" aria-label="邮件列表">
           {filteredMails.length === 0 ? (
-            <Empty description="暂无邮件" style={{ padding: 40 }} />
+            <div className="lp2-mail-list-empty">
+              <Empty description={mails.length ? '当前筛选下没有邮件' : '未读取到邮件'}>
+                <Button icon={<ReloadOutlined />} onClick={loadMails}>重新读取</Button>
+              </Empty>
+            </div>
           ) : (
             filteredMails.map((mail) => (
               <button
-                key={mail.id} type="button"
+                key={mail.id}
+                type="button"
                 className={`lp2-mail-row${mail.id === selected?.id ? ' active' : ''}${!mail.read ? ' unread' : ''}`}
                 onClick={() => setSelectedId(mail.id)}
               >
                 <span className="lp2-mail-row-main">
                   <span className="lp2-mail-row-top">
-                    <strong>{mail.from || '(未知发件人)'}</strong>
+                    <strong>{mail.subject || '(无主题)'}</strong>
                     <time>{mail.date}</time>
                   </span>
-                  <small>{mail.subject}</small>
-                  <em>{mail.preview}</em>
+                  <small>{mail.from || '(未知发件人)'}</small>
+                  <em>{mail.preview || '暂无预览内容'}</em>
                 </span>
-                <span className="lp2-mail-row-meta">
-                  <span onClick={(e) => { e.stopPropagation(); handleStar(mail.id, mail.starred) }} style={{ cursor: 'pointer' }}>
-                    {mail.starred ? <StarFilled /> : <StarOutlined />}
-                  </span>
+                <span
+                  className="lp2-mail-row-star"
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleStar(mail.id, mail.starred)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      handleStar(mail.id, mail.starred)
+                    }
+                  }}
+                >
+                  {mail.starred ? <StarFilled /> : <StarOutlined />}
                 </span>
               </button>
             ))
           )}
         </section>
 
-        {selected ? (
-          <article className="lp2-mail-detail">
-            <div className="lp2-mail-detail-title">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Tag color="purple">{folderLabel}</Tag>
-                <h2>{detail?.subject || selected.subject}</h2>
-                <p>{detail?.from || selected.from} · {detail?.date || selected.date}</p>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <Button icon={selected.starred ? <StarFilled /> : <StarOutlined />}
-                  onClick={() => handleStar(selected.id, selected.starred)} />
-                <Button danger icon={<DeleteOutlined />}
-                  onClick={() => handleDelete(selected.id)} />
-              </div>
+        <article className="lp2-mail-detail">
+          {!selected ? (
+            <div className="lp2-mail-detail-empty">
+              <Empty description="请选择一封邮件" />
             </div>
+          ) : (
+            <>
+              <header className="lp2-mail-detail-title">
+                <div>
+                  <Tag color="purple">{folderLabel}</Tag>
+                  <h2>{detail?.subject || selected.subject || '(无主题)'}</h2>
+                  <p>{detail?.from || selected.from || '(未知发件人)'} · {detail?.date || selected.date}</p>
+                </div>
+                <div className="lp2-mail-detail-tools">
+                  <Button
+                    icon={selected.starred ? <StarFilled /> : <StarOutlined />}
+                    onClick={() => handleStar(selected.id, selected.starred)}
+                  />
+                  <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete(selected.id)} />
+                </div>
+              </header>
 
-            <div className="lp2-mail-body" style={{ flex: 1, overflow: 'auto', padding: '12px 0' }}>
-              {detailLoading ? (
-                <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
-              ) : detail?.body ? (
-                <div
-                  dangerouslySetInnerHTML={{ __html: detail.body }}
-                  style={{ lineHeight: 1.9, wordBreak: 'break-word' }}
-                />
-              ) : (
-                <p style={{ color: '#999' }}>{selected.preview || '点击邮件标题查看详情'}</p>
-              )}
-            </div>
+              <div className="lp2-mail-body">
+                {detailLoading ? (
+                  <div className="lp2-mail-body-loading"><Spin /></div>
+                ) : detail?.body ? (
+                  <div
+                    className="lp2-mail-html-body"
+                    dangerouslySetInnerHTML={{ __html: detail.body }}
+                  />
+                ) : (
+                  <p>{selected.preview || '正文暂时无法读取，可打开原站查看。'}</p>
+                )}
 
-            <div className="lp2-mail-detail-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
-              <Button icon={<RollbackOutlined />} onClick={() => openCompose('reply')}>回复</Button>
-              <Button icon={<ShareAltOutlined />} onClick={() => openCompose('forward')}>转发</Button>
-              <Button icon={<ThunderboltOutlined />} onClick={handleConvertToFocus}>转为今日重点</Button>
-              <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>甘蔗 Tutor 总结</Button>
-            </div>
-          </article>
-        ) : (
-          <div className="lp2-mail-detail" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Empty description="请选择一封邮件" />
-          </div>
-        )}
+                {!!detail?.attachments?.length && (
+                  <div className="lp2-mail-attachments">
+                    {detail.attachments.map((attachment) => (
+                      <span key={`${attachment.name}-${attachment.url}`}>{attachment.name}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <footer className="lp2-mail-detail-actions">
+                <Button icon={<RollbackOutlined />} onClick={() => openCompose('reply')}>回复</Button>
+                <Button icon={<ShareAltOutlined />} onClick={() => openCompose('forward')}>转发</Button>
+                <Button icon={<ThunderboltOutlined />} onClick={handleConvertToFocus}>转为今日重点</Button>
+                <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>
+                  甘蔗 Tutor 总结
+                </Button>
+              </footer>
+            </>
+          )}
+        </article>
       </div>
 
-      <Modal title="甘蔗 Tutor 邮件总结" open={summaryOpen}
-        onCancel={() => setSummaryOpen(false)} footer={null} width={600}>
+      <Modal
+        title="甘蔗 Tutor 邮件总结"
+        open={summaryOpen}
+        onCancel={() => setSummaryOpen(false)}
+        footer={null}
+        width={600}
+      >
         {summaryLoading ? (
-          <div style={{ textAlign: 'center', padding: 32 }}><Spin /><p style={{ marginTop: 12, color: '#888' }}>正在总结邮件内容...</p></div>
+          <div className="lp2-mail-modal-loading">
+            <Spin />
+            <p>正在总结邮件内容...</p>
+          </div>
         ) : (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+          <div className="lp2-mail-summary">{summaryText}</div>
         )}
       </Modal>
 
-      {/* Compose modal */}
       <Modal
         title={composeMode === 'reply' ? '回复邮件' : '转发邮件'}
         open={composeOpen}
@@ -379,7 +534,7 @@ export default function MailboxPage() {
         width={640}
         destroyOnClose
       >
-        <Form form={composeForm} layout="vertical" style={{ marginTop: 12 }}>
+        <Form form={composeForm} layout="vertical" className="lp2-mail-compose-form">
           <Form.Item name="to" label="收件人" rules={[{ required: true, message: '请输入收件人' }]}>
             <Input placeholder="收件人邮箱地址" />
           </Form.Item>
@@ -387,7 +542,7 @@ export default function MailboxPage() {
             <Input placeholder="邮件主题" />
           </Form.Item>
           <Form.Item name="body" label="正文">
-            <Input.TextArea rows={8} placeholder="邮件正文..." />
+            <Input.TextArea rows={9} placeholder="邮件正文..." />
           </Form.Item>
         </Form>
       </Modal>

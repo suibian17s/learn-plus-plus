@@ -220,7 +220,7 @@ export default function Dashboard() {
               focusItems.map((item: any) => (
                 <button key={item.key} type="button" className={`lp2-task-row priority-${item.priority}`} onClick={item.onClick}>
                   <CourseIcon courseName={item.course} size="sm" />
-                  <span><strong>{item.course}</strong><small>{item.title}</small></span>
+                  <span><strong>{item.title}</strong><small>{item.course}</small></span>
                   <span className="lp2-task-meta">
                     <em>{item.remaining}</em>
                   </span>
