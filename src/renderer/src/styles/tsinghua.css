@@ -6812,3 +6812,47 @@ html.lp2-window-closing .login-v2-frame {
 .lp2-home .lp2-card:hover {
   transform: none !important;
 }
+
+/* ── Final home borderless refinement ── */
+.lp2-home .lp2-overview-card {
+  background: #FFFFFF !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.lp2-home .lp2-overview-card .ant-progress {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.lp2-home .lp2-overview-metrics span {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.lp2-home .lp2-task-row,
+.lp2-home .lp2-task-row.priority-P0,
+.lp2-home .lp2-task-row.priority-P1,
+.lp2-home .lp2-task-row.priority-P2 {
+  background: #FFFFFF !important;
+}
+
+.lp2-home .lp2-task-meta em {
+  min-width: 76px;
+  text-align: center;
+}
+
+.lp2-home .lp2-card-link,
+.lp2-home .lp2-card-link.ant-btn,
+.lp2-home .lp2-card-link:hover,
+.lp2-home .lp2-card-link:active,
+.lp2-home .lp2-card-link:focus {
+  border: 0 !important;
+  background: transparent !important;
+  outline: none !important;
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Form, Input, Select, Button, Switch, Space, Divider, message, Popconfirm, Tag, Alert, Typography } from 'antd'
-import { CalendarOutlined, FolderOpenOutlined, LogoutOutlined, KeyOutlined, RobotOutlined } from '@ant-design/icons'
+import { CalendarOutlined, FolderOpenOutlined, LoginOutlined, LogoutOutlined, KeyOutlined, RobotOutlined } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
 import { AI_PROVIDER_PRESETS, getAiProviderPreset } from '../../../shared/aiProviders'
 
@@ -44,6 +44,8 @@ export default function SettingsPage() {
       form.setFieldsValue(loaded)
     })
   }, [form])
+
+  const mailMode = Form.useWatch('mailMode', form) || settings.mailMode || 'web'
 
   async function handleSave(values: any) {
     setLoading(true)
@@ -91,6 +93,62 @@ export default function SettingsPage() {
     await window.learn.auth.logout()
     reset()
     navigate('/login')
+  }
+
+  const [mailPasswordInput, setMailPasswordInput] = useState('')
+
+  async function handleSaveMailPassword() {
+    if (!mailPasswordInput.trim()) return
+    await window.learn.settings.setApiKey(mailPasswordInput, 'mail')
+    setMailPasswordInput('')
+    message.success('邮箱密码已加密保存')
+  }
+
+  async function handleTestMailConnection() {
+    const values = form.getFieldsValue()
+    if (!values.mailUsername || !values.mailImapHost) {
+      message.error('请先填写邮箱账号和 IMAP 服务器')
+      return
+    }
+    message.loading({ key: 'mail-test', content: '正在测试连接...' })
+    const ok = await window.learn.mail.testConnection({
+      imapHost: values.mailImapHost || 'mails.tsinghua.edu.cn',
+      imapPort: values.mailImapPort || 993,
+      imapTls: values.mailImapTls !== false,
+      smtpHost: values.mailSmtpHost || values.mailImapHost || 'mails.tsinghua.edu.cn',
+      smtpPort: values.mailSmtpPort || 465,
+      smtpTls: values.mailSmtpTls !== false,
+      username: values.mailUsername,
+      password: mailPasswordInput,
+    })
+    message.destroy('mail-test')
+    if (ok) message.success('连接成功！IMAP 服务器可达')
+    else message.error('连接失败，请检查服务器地址、端口和密码')
+  }
+
+  async function handleLoginImap() {
+    const values = form.getFieldsValue()
+    if (!values.mailUsername) { message.error('请填写邮箱账号'); return }
+    message.loading({ key: 'mail-imap', content: '正在连接...' })
+    const ok = await window.learn.mail.loginImap({
+      imapHost: values.mailImapHost || 'mails.tsinghua.edu.cn',
+      imapPort: values.mailImapPort || 993,
+      imapTls: values.mailImapTls !== false,
+      smtpHost: values.mailSmtpHost || values.mailImapHost || 'mails.tsinghua.edu.cn',
+      smtpPort: values.mailSmtpPort || 465,
+      smtpTls: values.mailSmtpTls !== false,
+      username: values.mailUsername,
+      password: mailPasswordInput,
+    })
+    message.destroy('mail-imap')
+    if (ok) message.success('邮箱已连接')
+    else message.error('连接失败')
+  }
+
+  async function handleLoginWeb() {
+    const r = await window.learn.mail.login()
+    if (r.ok) message.success('邮箱登录成功')
+    else message.error('登录超时或取消')
   }
 
   async function handleResetRisk() {
@@ -163,6 +221,65 @@ export default function SettingsPage() {
         </Card>
 
         <Card
+          title={<Space><LoginOutlined /> 邮箱配置</Space>}
+          size="small"
+        >
+          <Form.Item name="mailMode" label="接入方式">
+            <Select
+              options={[
+                { value: 'web', label: '网页登录（打开浏览器窗口）' },
+                { value: 'imap', label: 'IMAP/SMTP 协议（类似 Outlook）' },
+              ]}
+            />
+          </Form.Item>
+
+          {mailMode === 'imap' ? (
+            <>
+              <Form.Item name="mailImapHost" label="IMAP 服务器">
+                <Input placeholder="mails.tsinghua.edu.cn" />
+              </Form.Item>
+              <Form.Item label="IMAP 端口 / 加密">
+                <Space>
+                  <Form.Item name="mailImapPort" noStyle><Input placeholder="993" style={{ width: 100 }} /></Form.Item>
+                  <Form.Item name="mailImapTls" noStyle valuePropName="checked"><Switch checkedChildren="SSL" unCheckedChildren="无" /></Form.Item>
+                </Space>
+              </Form.Item>
+              <Form.Item name="mailSmtpHost" label="SMTP 服务器">
+                <Input placeholder="mails.tsinghua.edu.cn" />
+              </Form.Item>
+              <Form.Item label="SMTP 端口 / 加密">
+                <Space>
+                  <Form.Item name="mailSmtpPort" noStyle><Input placeholder="465" style={{ width: 100 }} /></Form.Item>
+                  <Form.Item name="mailSmtpTls" noStyle valuePropName="checked"><Switch checkedChildren="SSL" unCheckedChildren="STARTTLS" /></Form.Item>
+                </Space>
+              </Form.Item>
+              <Form.Item name="mailUsername" label="邮箱账号">
+                <Input placeholder="username@mails.tsinghua.edu.cn" />
+              </Form.Item>
+              <Form.Item label="密码 / 专用密码">
+                <Space>
+                  <Input.Password
+                    placeholder="两步验证用户请使用客户端专用密码"
+                    value={mailPasswordInput}
+                    onChange={(e) => setMailPasswordInput(e.target.value)}
+                    style={{ width: 280 }}
+                  />
+                  <Button onClick={handleSaveMailPassword}>保存密码</Button>
+                </Space>
+              </Form.Item>
+              <Form.Item>
+                <Button onClick={handleTestMailConnection}>测试连接</Button>
+                <Button type="primary" onClick={handleLoginImap} style={{ marginLeft: 8 }}>登录邮箱</Button>
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item label=" ">
+              <Button onClick={handleLoginWeb}>打开网页登录</Button>
+            </Form.Item>
+          )}
+        </Card>
+
+        <Card
           title={<Space><RobotOutlined /> 甘蔗 tutor 配置</Space>}
           size="small"
         >
@@ -216,6 +333,15 @@ export default function SettingsPage() {
               <div style={{ wordBreak: 'break-all' }}>Endpoint：{providerPreset.endpoint}</div>
             </div>
           )}
+
+          <Form.Item name="tutorStyle" label="甘蔗 Tutor 风格">
+            <Select
+              options={[
+                { value: 'cute', label: '可爱风 — 正太语气，俏皮活泼' },
+                { value: 'serious', label: '正经风 — 专业学术助手，简洁直接' },
+              ]}
+            />
+          </Form.Item>
 
           {providerPreset.note && (
             <Alert type="info" showIcon message={providerPreset.note} style={{ marginBottom: 16 }} />

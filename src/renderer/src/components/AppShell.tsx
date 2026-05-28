@@ -56,6 +56,7 @@ export default function AppShell() {
     currentSemester,
     setSemesters,
     reset,
+    bumpStatsVersion,
   } = useAuthStore()
   const [accountStore, setAccountStore] = useState<{ activeId?: string; accounts: any[] }>({ accounts: [] })
   const [updateNotice, setUpdateNotice] = useState<UpdateNotice | null>(null)
@@ -193,14 +194,16 @@ export default function AppShell() {
   }
 
   async function loadCourses(forceFirstCourse = false, silent = false) {
+    if (!silent) message.loading({ key: 'load-courses', content: '正在加载课程...', duration: 0 })
     try {
       const result: any = await window.learn.course.listSemesters()
       if (result.error) {
         if (isAuthErrorMessage(result.error)) {
           handleAuthError(result.error)
+          message.destroy('load-courses')
           return
         }
-        if (!silent) message.error(`加载课程失败: ${result.error}`)
+        if (!silent) message.error({ key: 'load-courses', content: `课程加载失败: ${result.error}` })
         return
       }
 
@@ -216,6 +219,7 @@ export default function AppShell() {
         if (coursesResult?.error) {
           if (isAuthErrorMessage(coursesResult.error)) {
             handleAuthError(coursesResult.error)
+            message.destroy('load-courses')
             return
           }
           lastError = coursesResult.error
@@ -229,10 +233,12 @@ export default function AppShell() {
       }
 
       if (!coursesData.length && lastError && !silent) {
-        message.error(`加载课程失败: ${lastError}`)
+        message.error({ key: 'load-courses', content: `课程加载失败: ${lastError}` })
       }
 
       setSemesters(semestersData, loadedSemester)
+      // Stable sort by name to prevent order shuffling on refresh
+      coursesData.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh'))
       setCourses(coursesData)
 
       const firstCourseId = coursesData[0]?.id
@@ -243,13 +249,16 @@ export default function AppShell() {
       if (firstCourseId && (forceFirstCourse || (courseId && !currentCourseStillVisible))) {
         navigate(`/course/${firstCourseId}/files`, { replace: !forceFirstCourse })
       }
+
+      if (!silent) message.destroy('load-courses')
     } catch (err: any) {
       const msg = err?.message || String(err)
       if (isAuthErrorMessage(msg)) {
         reset()
         navigate('/login')
+        message.destroy('load-courses')
       } else if (!silent) {
-        message.error(`加载课程失败: ${msg}`)
+        message.error({ key: 'load-courses', content: `课程加载失败: ${msg}` })
       }
     }
   }
@@ -282,6 +291,7 @@ export default function AppShell() {
     await loadAccounts()
     await loadCourses(false, true)
     await queryClient.invalidateQueries()
+    bumpStatsVersion()
     message.success({ key: 'global-refresh', content: '已刷新' })
   }
 
@@ -362,10 +372,6 @@ export default function AppShell() {
     navigate(`/course/${nextCourseId}/${nextTab}`)
   }
 
-  function handlePlannedEntry(label: string) {
-    message.info(`${label} 将在 v2.0 后续开发中接入`)
-  }
-
   async function handleSearch(value: string) {
     setSearchValue(value)
     if (!value.trim()) { setSearchResults([]); setShowResults(false); return }
@@ -382,6 +388,17 @@ export default function AppShell() {
     } else if (result.targetTab === 'mailbox') {
       navigate('/mailbox')
     }
+  }
+
+  function updateMailQuery(patch: Record<string, string>) {
+    const params = new URLSearchParams(location.search)
+    const folder = params.get('folder') || 'inbox'
+    params.set('folder', folder)
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) params.set(key, value)
+      else params.delete(key)
+    }
+    navigate(`/mailbox?${params.toString()}`)
   }
 
   function renderTopbar() {
@@ -475,14 +492,29 @@ export default function AppShell() {
     }
 
     if (isMailboxRoute) {
+      const params = new URLSearchParams(location.search)
       return (
         <div className="lp2-context-head lp2-mail-context-head">
-          <Input prefix={<SearchOutlined />} placeholder="搜索邮件" allowClear />
-          <Select defaultValue="all" options={[{ value: 'all', label: '全部' }, { value: 'unread', label: '未读' }]} />
-          <Select defaultValue="time" options={[{ value: 'time', label: '时间排序' }, { value: 'star', label: '星标优先' }]} />
-          <Button icon={<ReloadOutlined />} onClick={() => handlePlannedEntry('刷新邮箱')} />
-          <Button icon={<StarOutlined />} onClick={() => handlePlannedEntry('星标邮件')} />
-          <Button icon={<MoreOutlined />} onClick={() => handlePlannedEntry('更多邮件操作')} />
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder="搜索邮件"
+            allowClear
+            value={params.get('q') || ''}
+            onChange={(e) => updateMailQuery({ q: e.target.value })}
+          />
+          <Select
+            value={params.get('filter') || 'all'}
+            onChange={(value) => updateMailQuery({ filter: value })}
+            options={[{ value: 'all', label: '全部' }, { value: 'unread', label: '未读' }, { value: 'starred', label: '星标' }]}
+          />
+          <Select
+            value={params.get('sort') || 'time'}
+            onChange={(value) => updateMailQuery({ sort: value })}
+            options={[{ value: 'time', label: '时间排序' }, { value: 'star', label: '星标优先' }]}
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => updateMailQuery({ refresh: String(Date.now()) })} />
+          <Button icon={<StarOutlined />} onClick={() => updateMailQuery({ filter: 'starred' })} />
+          <Button icon={<MoreOutlined />} onClick={() => window.learn.mail.show()} />
         </div>
       )
     }

@@ -17,9 +17,11 @@ function classifyDeadline(raw: string): { priority: 'P0' | 'P1' | 'P2'; tag: str
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
   const threeDaysLater = new Date(todayEnd.getTime() + 3 * 86400000)
   const deadlineText = `${dl.getMonth() + 1}/${dl.getDate()} ${String(dl.getHours()).padStart(2, '0')}:${String(dl.getMinutes()).padStart(2, '0')}`
-  if (dl <= todayEnd) return { priority: 'P0', tag: '今天截止', deadlineText, deadlineTime: dl.getTime() }
-  if (dl <= threeDaysLater) return { priority: 'P1', tag: '即将截止', deadlineText, deadlineTime: dl.getTime() }
-  return { priority: 'P2', tag: '待完成', deadlineText, deadlineTime: dl.getTime() }
+  const remainingDays = Math.max(0, Math.ceil((dl.getTime() - now.getTime()) / 86400000))
+  const tag = `剩余 ${remainingDays} 天`
+  if (dl <= todayEnd) return { priority: 'P0', tag, deadlineText, deadlineTime: dl.getTime() }
+  if (dl <= threeDaysLater) return { priority: 'P1', tag, deadlineText, deadlineTime: dl.getTime() }
+  return { priority: 'P2', tag, deadlineText, deadlineTime: dl.getTime() }
 }
 
 export default function AllTasksPage() {

@@ -100,6 +100,15 @@ export default function Dashboard() {
     return `${month}/${day} ${hour}:${minute}`
   }
 
+  function formatRemainingDays(raw?: string): string {
+    if (!raw) return ''
+    const date = new Date(raw)
+    if (isNaN(date.getTime())) return ''
+    const dayMs = 24 * 60 * 60 * 1000
+    const days = Math.max(0, Math.ceil((date.getTime() - Date.now()) / dayMs))
+    return `剩余 ${days} 天`
+  }
+
   const overallPercent = useMemo(() => {
     if (!stats || !stats.courseProgress.length) return 0
     return Math.round(stats.courseProgress.reduce((s, c) => s + c.percent, 0) / stats.courseProgress.length)
@@ -126,6 +135,7 @@ export default function Dashboard() {
       tag: item.tag,
       priority: item.priority,
       deadline: formatDeadline(item.deadline),
+      remaining: formatRemainingDays(item.deadline),
       onClick: () => goCourseTab(item.courseId, item.targetTab),
     }))
   }, [stats])
@@ -200,7 +210,7 @@ export default function Dashboard() {
 
         {/* ── 今日重点 ── */}
         <section className="lp2-card lp2-focus-card">
-          <div className="lp2-card-title"><span>今日重点（所有课程）</span></div>
+          <div className="lp2-card-title"><span>今日重点</span></div>
           <div className="lp2-task-list">
             {!isReady ? (
               <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
@@ -212,8 +222,7 @@ export default function Dashboard() {
                   <CourseIcon courseName={item.course} size="sm" />
                   <span><strong>{item.course}</strong><small>{item.title}</small></span>
                   <span className="lp2-task-meta">
-                    <em>{item.tag}</em>
-                    <time>{item.deadline}</time>
+                    <em>{item.remaining}</em>
                   </span>
                 </button>
               ))
