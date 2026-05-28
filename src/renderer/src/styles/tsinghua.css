@@ -7398,6 +7398,102 @@ html.lp2-window-closing .login-v2-frame {
   margin-top: 12px !important;
 }
 
+/* ── Tutor Markdown rendering ── */
+.lp2-markdown {
+  color: inherit;
+  line-height: 1.82;
+  word-break: break-word;
+}
+
+.lp2-markdown > *:first-child {
+  margin-top: 0 !important;
+}
+
+.lp2-markdown > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+.lp2-markdown p {
+  margin: 0 0 10px;
+}
+
+.lp2-markdown h1,
+.lp2-markdown h2,
+.lp2-markdown h3,
+.lp2-markdown h4 {
+  margin: 16px 0 8px;
+  color: var(--lp2-text);
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.lp2-markdown h1 {
+  font-size: 22px;
+}
+
+.lp2-markdown h2 {
+  font-size: 19px;
+}
+
+.lp2-markdown h3 {
+  font-size: 16px;
+}
+
+.lp2-markdown h4 {
+  font-size: 15px;
+}
+
+.lp2-markdown ul,
+.lp2-markdown ol {
+  margin: 8px 0 12px;
+  padding-left: 22px;
+}
+
+.lp2-markdown li {
+  margin: 4px 0;
+}
+
+.lp2-markdown code {
+  padding: 2px 6px;
+  border-radius: 7px;
+  background: rgba(107, 70, 193, 0.08);
+  color: #5B3CB0;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.lp2-markdown pre {
+  margin: 12px 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid rgba(232, 225, 245, 0.92);
+  border-radius: 14px;
+  background: #FBFAFF;
+}
+
+.lp2-markdown pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--lp2-text);
+  white-space: pre;
+}
+
+.lp2-markdown a {
+  color: var(--lp2-primary);
+  text-decoration: none;
+  font-weight: 650;
+}
+
+.lp2-markdown a:hover {
+  text-decoration: underline;
+}
+
+.lp2-ai-message .lp2-markdown {
+  min-width: 0;
+}
+
 @media (max-width: 1180px) {
   .lp2-mail-statusbar {
     grid-template-columns: minmax(0, 1fr) auto !important;

@@ -5,6 +5,7 @@ import { Button, List, Drawer, Input, Modal, Typography, Spin, Tag } from 'antd'
 import { DownloadOutlined, FolderOpenOutlined, PaperClipOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons'
 import DOMPurify from 'dompurify'
 import EmptyState from '../components/EmptyState'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useDownloadStore } from '../store/downloads'
 import { formatDateTime } from '../utils/time'
 
@@ -91,6 +92,15 @@ export default function NotificationsPage() {
     setSummaryOpen(true)
     setSummaryLoading(true)
     setSummaryText('')
+    const sessionId = `notice-summary-${Date.now()}`
+    const unsubChunk = window.learn.hwai.onChunk((data) => {
+      if (data.sessionId === sessionId && data.delta) {
+        setSummaryText((prev) => prev + data.delta)
+      }
+    })
+    const unsubEnd = window.learn.hwai.onEnd((data) => {
+      if (data.sessionId === sessionId) setSummaryLoading(false)
+    })
     try {
       const content = source.slice(0, 40).map((notice: any, index: number) => {
         const plainContent = (notice.htmlContent || notice.content || '')
@@ -105,11 +115,13 @@ export default function NotificationsPage() {
         ].join('\n')
       }).join('\n\n')
       const prompt = `请总结这个课程的全部公告，按重要事项、时间安排、需要学生行动、附件/材料线索四类整理，最后给出优先级建议。\n\n${content}`
-      const result = await window.learn.hwai.tutorAsk(courseId!, prompt)
-      setSummaryText(result.content || '总结生成失败')
+      const result = await window.learn.hwai.tutorAsk(courseId!, prompt, sessionId)
+      if (!result.ok) setSummaryText(result.error || '总结生成失败')
     } catch (err: any) {
       setSummaryText('总结生成失败：' + (err.message || '未知错误'))
     } finally {
+      unsubChunk()
+      unsubEnd()
       setSummaryLoading(false)
     }
   }
@@ -232,13 +244,13 @@ export default function NotificationsPage() {
         footer={null}
         width={600}
       >
-        {summaryLoading ? (
+        {summaryLoading && !summaryText ? (
           <div style={{ textAlign: 'center', padding: 32 }}>
             <Spin />
             <p style={{ marginTop: 12, color: '#888' }}>正在生成公告总结...</p>
           </div>
         ) : (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+          <MarkdownRenderer content={summaryText} />
         )}
       </Modal>
     </div>

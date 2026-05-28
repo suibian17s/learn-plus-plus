@@ -50,7 +50,11 @@ async function buildCourseContext(courseId: string): Promise<string> {
   })
 }
 
-export async function summarizeCourseArea(courseId: string, kind: TutorSummaryKind): Promise<string> {
+export async function summarizeCourseArea(
+  courseId: string,
+  kind: TutorSummaryKind,
+  onChunk?: (delta: string) => void,
+): Promise<string> {
   return withAuth(async (h) => {
     let title = ''
     let context = ''
@@ -87,12 +91,13 @@ export async function summarizeCourseArea(courseId: string, kind: TutorSummaryKi
         },
       ],
       maxTokens: 2200,
+      onChunk,
     })
   })
 }
 
-export async function askTutor(courseId: string, question: string): Promise<string> {
-  const context = await buildCourseContext(courseId)
+export async function askTutor(courseId: string, question: string, onChunk?: (delta: string) => void): Promise<string> {
+  const context = courseId === '__mail__' ? '当前问题来自邮箱模块，无课程上下文。' : await buildCourseContext(courseId)
   return complete({
     system: '你是 learn++ 的甘蔗 tutor，全栈式 AI 辅助学习助手。回答要谨慎，不编造课程材料；不确定时提示学生查看原页面或询问老师/助教。',
     messages: [
@@ -102,10 +107,14 @@ export async function askTutor(courseId: string, question: string): Promise<stri
       },
     ],
     maxTokens: 2200,
+    onChunk,
   })
 }
 
-export async function summarizeSingleFile(file: { name: string; url: string; fileType?: string }): Promise<string> {
+export async function summarizeSingleFile(
+  file: { name: string; url: string; fileType?: string },
+  onChunk?: (delta: string) => void,
+): Promise<string> {
   const buffer = await downloadUrlToBuffer(file.url)
   const tmpDir = path.join(os.tmpdir(), 'learnpp-tutor-files')
   fs.mkdirSync(tmpDir, { recursive: true })
@@ -125,6 +134,7 @@ export async function summarizeSingleFile(file: { name: string; url: string; fil
         content: `课件名称：${file.name}\n\n课件内容：\n${parsed.text.slice(0, 15000)}\n\n请总结该课件的：\n1. 核心知识点\n2. 重点概念\n3. 学习建议`,
       }],
       maxTokens: 2000,
+      onChunk,
     })
 
     try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }

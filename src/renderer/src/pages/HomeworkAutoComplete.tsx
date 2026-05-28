@@ -14,6 +14,7 @@ import { useAiStore } from '../store/ai'
 import RiskDisclaimerModal from '../components/RiskDisclaimerModal'
 import HomeworkPreview from '../components/HomeworkPreview'
 import EmptyState from '../components/EmptyState'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import { formatDateTime } from '../utils/time'
 
 const TYPE_LABELS: Record<string, { text: string; color: string }> = {
@@ -219,15 +220,26 @@ export default function HomeworkAutoComplete() {
     setTutorOutput('')
     setTutorModal(true)
     setTutorLoading(true)
+    const sessionId = `homework-summary-${Date.now()}`
+    const unsubChunk = window.learn.hwai.onChunk((data) => {
+      if (data.sessionId === sessionId && data.delta) {
+        setTutorOutput((prev) => prev + data.delta)
+      }
+    })
+    const unsubEnd = window.learn.hwai.onEnd((data) => {
+      if (data.sessionId === sessionId) setTutorLoading(false)
+    })
     try {
-      const result = await window.learn.hwai.tutorSummary(courseId, kind)
+      const result = await window.learn.hwai.tutorSummary(courseId, kind, sessionId)
       if (!result.ok) {
         message.error(result.error || '甘蔗 tutor 处理失败')
         setTutorOutput(result.error || '')
         return
       }
-      setTutorOutput(result.content || '')
+      setTutorOutput((prev) => prev || result.content || '')
     } finally {
+      unsubChunk()
+      unsubEnd()
       setTutorLoading(false)
     }
   }
@@ -238,15 +250,26 @@ export default function HomeworkAutoComplete() {
     setTutorOutput('')
     setTutorModal(true)
     setTutorLoading(true)
+    const sessionId = `homework-ask-${Date.now()}`
+    const unsubChunk = window.learn.hwai.onChunk((data) => {
+      if (data.sessionId === sessionId && data.delta) {
+        setTutorOutput((prev) => prev + data.delta)
+      }
+    })
+    const unsubEnd = window.learn.hwai.onEnd((data) => {
+      if (data.sessionId === sessionId) setTutorLoading(false)
+    })
     try {
-      const result = await window.learn.hwai.tutorAsk(courseId, tutorQuestion.trim())
+      const result = await window.learn.hwai.tutorAsk(courseId, tutorQuestion.trim(), sessionId)
       if (!result.ok) {
         message.error(result.error || '甘蔗 tutor 处理失败')
         setTutorOutput(result.error || '')
         return
       }
-      setTutorOutput(result.content || '')
+      setTutorOutput((prev) => prev || result.content || '')
     } finally {
+      unsubChunk()
+      unsubEnd()
       setTutorLoading(false)
     }
   }
@@ -599,15 +622,13 @@ export default function HomeworkAutoComplete() {
         footer={<Button onClick={() => setTutorModal(false)}>关闭</Button>}
         width={760}
       >
-        {tutorLoading ? (
+        {tutorLoading && !tutorOutput ? (
           <div style={{ padding: 48, textAlign: 'center' }}>
             <Spin />
             <div style={{ marginTop: 12, color: '#888' }}>甘蔗 tutor 正在整理...</div>
           </div>
         ) : (
           <div style={{
-            whiteSpace: 'pre-wrap',
-            lineHeight: 1.8,
             maxHeight: '60vh',
             overflow: 'auto',
             background: '#fafafa',
@@ -615,7 +636,7 @@ export default function HomeworkAutoComplete() {
             borderRadius: 8,
             padding: 16,
           }}>
-            {tutorOutput || '暂无内容'}
+            <MarkdownRenderer content={tutorOutput || '暂无内容'} />
           </div>
         )}
       </Modal>

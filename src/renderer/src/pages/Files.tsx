@@ -16,6 +16,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons'
 import EmptyState from '../components/EmptyState'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useDownloadStore } from '../store/downloads'
 import { formatDateTime } from '../utils/time'
 
@@ -245,21 +246,34 @@ export default function FilesPage() {
     setSummaryOpen(true)
     setSummaryLoading(true)
     setSummaryText('')
+    const sessionId = `file-summary-${Date.now()}`
+    const unsubChunk = window.learn.hwai.onChunk((data) => {
+      if (data.sessionId === sessionId && data.delta) {
+        setSummaryText((prev) => prev + data.delta)
+      }
+    })
+    const unsubEnd = window.learn.hwai.onEnd((data) => {
+      if (data.sessionId === sessionId) setSummaryLoading(false)
+    })
     try {
       const result = await window.learn.hwai.summarizeFile({
         name: selectedFile.name,
         url: selectedFile.downloadUrl,
         fileType: selectedFile.fileType,
+        sessionId,
       })
       if (!result.ok) {
         setSummaryText(result.error || '总结生成失败')
-      } else {
+      } else if (!summaryText) {
         setSummaryText(result.content || '暂无内容')
       }
     } catch (err: any) {
       setSummaryText('总结生成失败：' + (err.message || '未知错误'))
+    } finally {
+      unsubChunk()
+      unsubEnd()
+      setSummaryLoading(false)
     }
-    setSummaryLoading(false)
   }
 
   function formatSize(bytes: number) {
@@ -446,13 +460,13 @@ export default function FilesPage() {
         footer={null}
         width={600}
       >
-        {summaryLoading ? (
+        {summaryLoading && !summaryText ? (
           <div style={{ textAlign: 'center', padding: 32 }}>
             <Spin />
             <p style={{ marginTop: 12, color: '#888' }}>正在生成课件总结...</p>
           </div>
         ) : (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+          <MarkdownRenderer content={summaryText} />
         )}
       </Modal>
     </div>

@@ -13,7 +13,6 @@ import { getAiProviderPreset, normalizeCustomEndpoint, type AiApiFormat } from '
 import { loadApiKey } from '../services/secret-store'
 import {
   runAgentLoop,
-  parseAiToolResponse,
   type ToolCall,
   type AgentChunkCallback,
   type ToolExecutor,
@@ -380,7 +379,7 @@ async function runAiCallWithTools(opts: {
       max_tokens: maxTokens,
       system: systemContent,
       messages: anthropicMessages,
-      stream: false,
+      stream: true,
     }
 
     if (anthropicTools?.length) {
@@ -419,7 +418,7 @@ async function runAiCallWithTools(opts: {
       model,
       max_tokens: maxTokens,
       messages: fullMessages,
-      stream: false,
+      stream: true,
     }
 
     if (opts.tools?.length) {
@@ -442,14 +441,105 @@ async function runAiCallWithTools(opts: {
     throw new Error(`AI API error ${resp.status}: ${text}`)
   }
 
-  const raw = await resp.text()
-  const parsed = parseAiToolResponse(raw, apiFormat)
+  if (!resp.body) throw new Error('No response body')
 
-  if (parsed.content && opts.onChunk) {
-    opts.onChunk(parsed.content)
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let fullText = ''
+  const toolCallMap = new Map<number, ToolCall>()
+
+  function applyOpenAiToolDelta(delta: any): void {
+    const calls = delta?.tool_calls || []
+    for (const call of calls) {
+      const index = call.index || 0
+      const current = toolCallMap.get(index) || {
+        id: call.id || `tool-${index}`,
+        function: { name: '', arguments: '' },
+      }
+      if (call.id) current.id = call.id
+      if (call.function?.name) current.function.name += call.function.name
+      if (call.function?.arguments) current.function.arguments += call.function.arguments
+      toolCallMap.set(index, current)
+    }
   }
 
-  return { content: parsed.content, toolCalls: parsed.toolCalls }
+  let anthropicToolIndex: number | null = null
+
+  function applyAnthropicEvent(parsed: any): void {
+    if (parsed?.type === 'content_block_start' && parsed?.content_block?.type === 'tool_use') {
+      const index = parsed.index || 0
+      anthropicToolIndex = index
+      toolCallMap.set(index, {
+        id: parsed.content_block.id || `tool-${index}`,
+        function: {
+          name: parsed.content_block.name || '',
+          arguments: '',
+        },
+      })
+      return
+    }
+    if (parsed?.type === 'content_block_delta' && parsed?.delta?.type === 'input_json_delta') {
+      const index = parsed.index ?? anthropicToolIndex ?? 0
+      const current = toolCallMap.get(index)
+      if (current) current.function.arguments += parsed.delta.partial_json || ''
+      return
+    }
+    const delta = parsed?.delta?.text || parsed?.content_block?.text || ''
+    if (delta) {
+      fullText += delta
+      opts.onChunk?.(delta)
+    }
+  }
+
+  function handleData(data: string): void {
+    if (!data || data === '[DONE]') return
+    try {
+      const parsed = JSON.parse(data)
+      if (apiFormat === 'anthropic') {
+        applyAnthropicEvent(parsed)
+        return
+      }
+
+      const delta = parsed?.choices?.[0]?.delta
+      const text = delta?.content || ''
+      if (text) {
+        fullText += text
+        opts.onChunk?.(text)
+      }
+      applyOpenAiToolDelta(delta)
+    } catch {
+      // Ignore malformed stream fragments.
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() || ''
+    for (const part of parts) {
+      const data = part.split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('\n')
+      handleData(data)
+    }
+  }
+
+  if (buffer.trim()) {
+    const data = buffer.split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('\n')
+    handleData(data)
+  }
+
+  const toolCalls = Array.from(toolCallMap.values()).filter((call) => call.function.name)
+
+  return { content: fullText, toolCalls: toolCalls.length ? toolCalls : undefined }
 }
 
 // ── IPC registration ──
@@ -491,17 +581,27 @@ export function registerAiIpc(): void {
     }
   })
 
-  ipcMain.handle('hwai:tutor-summary', async (_e, courseId: string, kind: 'notifications' | 'files' | 'discussion') => {
+  ipcMain.handle('hwai:tutor-summary', async (event, courseId: string, kind: 'notifications' | 'files' | 'discussion', sessionId?: string) => {
     try {
-      return { ok: true, content: await summarizeCourseArea(courseId, kind) }
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const content = await summarizeCourseArea(courseId, kind, sessionId ? (delta) => {
+        if (win && !win.isDestroyed()) win.webContents.send('hwai:generate-chunk', { sessionId, type: 'text', delta })
+      } : undefined)
+      if (sessionId && win && !win.isDestroyed()) win.webContents.send('hwai:generate-end', { sessionId })
+      return { ok: true, content }
     } catch (err) {
       return { ok: false, error: formatError(err) }
     }
   })
 
-  ipcMain.handle('hwai:tutor-ask', async (_e, courseId: string, question: string) => {
+  ipcMain.handle('hwai:tutor-ask', async (event, courseId: string, question: string, sessionId?: string) => {
     try {
-      return { ok: true, content: await askTutor(courseId, question) }
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const content = await askTutor(courseId, question, sessionId ? (delta) => {
+        if (win && !win.isDestroyed()) win.webContents.send('hwai:generate-chunk', { sessionId, type: 'text', delta })
+      } : undefined)
+      if (sessionId && win && !win.isDestroyed()) win.webContents.send('hwai:generate-end', { sessionId })
+      return { ok: true, content }
     } catch (err) {
       return { ok: false, error: formatError(err) }
     }
@@ -651,9 +751,13 @@ export function registerAiIpc(): void {
     }
   })
 
-  ipcMain.handle('hwai:summarize-file', async (_e, file: { name: string; url: string; fileType?: string }) => {
+  ipcMain.handle('hwai:summarize-file', async (event, file: { name: string; url: string; fileType?: string; sessionId?: string }) => {
     try {
-      const content = await summarizeSingleFile(file)
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const content = await summarizeSingleFile(file, file.sessionId ? (delta) => {
+        if (win && !win.isDestroyed()) win.webContents.send('hwai:generate-chunk', { sessionId: file.sessionId, type: 'text', delta })
+      } : undefined)
+      if (file.sessionId && win && !win.isDestroyed()) win.webContents.send('hwai:generate-end', { sessionId: file.sessionId })
       return { ok: true, content }
     } catch (err) {
       return { ok: false, error: formatError(err) }

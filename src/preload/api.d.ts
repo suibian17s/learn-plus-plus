@@ -54,8 +54,8 @@ export interface LearnApi {
     analyze: (courseId: string, hwId: string) => Promise<any>
     generate: (params: any) => Promise<any>
     buildAttachment: (spec: any, markdown: string) => Promise<{ tempPath: string }>
-    tutorSummary: (courseId: string, kind: 'notifications' | 'files' | 'discussion') => Promise<{ ok: boolean; content?: string; error?: string }>
-    tutorAsk: (courseId: string, question: string) => Promise<{ ok: boolean; content?: string; error?: string }>
+    tutorSummary: (courseId: string, kind: 'notifications' | 'files' | 'discussion', sessionId?: string) => Promise<{ ok: boolean; content?: string; error?: string }>
+    tutorAsk: (courseId: string, question: string, sessionId?: string) => Promise<{ ok: boolean; content?: string; error?: string }>
     abort: (sessionId: string) => Promise<void>
     hasAcknowledgedRisk: () => Promise<boolean>
     acknowledgeRisk: () => Promise<{ ok: boolean }>
@@ -63,7 +63,7 @@ export interface LearnApi {
     tutorAbort: (sessionId: string) => Promise<void>
     onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => () => void
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
-    summarizeFile: (file: { name: string; url: string; fileType?: string }) => Promise<{ ok: boolean; content?: string; error?: string }>
+    summarizeFile: (file: { name: string; url: string; fileType?: string; sessionId?: string }) => Promise<{ ok: boolean; content?: string; error?: string }>
     healthCheck: () => Promise<{ ok: boolean; error?: string }>
     orchestrate: (params: { analyzed: any; sessionId: string; outputFormat?: string }) => Promise<{ ok: boolean; result?: any; error?: string }>
     onOrchestrateChunk: (cb: (data: { sessionId: string; phase: any; detail?: string; content?: string }) => void) => () => void

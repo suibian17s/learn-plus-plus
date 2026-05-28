@@ -70,10 +70,10 @@ const api = {
     generate: (params: any) => ipcRenderer.invoke('hwai:generate', params),
     buildAttachment: (spec: any, markdown: string) =>
       ipcRenderer.invoke('hwai:build-attachment', spec, markdown),
-    tutorSummary: (courseId: string, kind: 'notifications' | 'files' | 'discussion') =>
-      ipcRenderer.invoke('hwai:tutor-summary', courseId, kind),
-    tutorAsk: (courseId: string, question: string) =>
-      ipcRenderer.invoke('hwai:tutor-ask', courseId, question),
+    tutorSummary: (courseId: string, kind: 'notifications' | 'files' | 'discussion', sessionId?: string) =>
+      ipcRenderer.invoke('hwai:tutor-summary', courseId, kind, sessionId),
+    tutorAsk: (courseId: string, question: string, sessionId?: string) =>
+      ipcRenderer.invoke('hwai:tutor-ask', courseId, question, sessionId),
     abort: (sessionId: string) => ipcRenderer.invoke('hwai:abort', sessionId),
     hasAcknowledgedRisk: () => ipcRenderer.invoke('hwai:has-acknowledged-risk'),
     acknowledgeRisk: () => ipcRenderer.invoke('hwai:acknowledge-risk'),

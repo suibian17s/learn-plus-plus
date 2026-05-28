@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, Input, List, Modal, Spin } from 'antd'
 import { MessageOutlined, RobotOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons'
 import EmptyState from '../components/EmptyState'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 
 export default function DiscussionPage() {
   const { courseId } = useParams()
@@ -68,14 +69,26 @@ export default function DiscussionPage() {
                   setSummaryOpen(true)
                   setSummaryLoading(true)
                   setSummaryText('')
+                  const sessionId = `discussion-summary-${Date.now()}`
+                  const unsubChunk = window.learn.hwai.onChunk((data) => {
+                    if (data.sessionId === sessionId && data.delta) {
+                      setSummaryText((prev) => prev + data.delta)
+                    }
+                  })
+                  const unsubEnd = window.learn.hwai.onEnd((data) => {
+                    if (data.sessionId === sessionId) setSummaryLoading(false)
+                  })
                   try {
                     const prompt = `请总结以下课程讨论：\n标题：${item.title || ''}\n作者：${item.author || ''}\n时间：${item.publishTime || ''}\n回复数：${item.replyCount || 0}`
-                    const result = await window.learn.hwai.tutorAsk(courseId!, prompt)
-                    setSummaryText(result.content || '总结生成失败')
+                    const result = await window.learn.hwai.tutorAsk(courseId!, prompt, sessionId)
+                    if (!result.ok) setSummaryText(result.error || '总结生成失败')
                   } catch (err: any) {
                     setSummaryText('总结生成失败：' + (err.message || '未知错误'))
+                  } finally {
+                    unsubChunk()
+                    unsubEnd()
+                    setSummaryLoading(false)
                   }
-                  setSummaryLoading(false)
                 }}
               >
                 甘蔗 Tutor
@@ -111,13 +124,13 @@ export default function DiscussionPage() {
         footer={null}
         width={600}
       >
-        {summaryLoading ? (
+        {summaryLoading && !summaryText ? (
           <div style={{ textAlign: 'center', padding: 32 }}>
             <Spin />
             <p style={{ marginTop: 12, color: '#888' }}>正在生成讨论总结...</p>
           </div>
         ) : (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>{summaryText}</div>
+          <MarkdownRenderer content={summaryText} />
         )}
       </Modal>
     </div>

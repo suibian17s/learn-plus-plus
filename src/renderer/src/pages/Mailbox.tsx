@@ -16,6 +16,7 @@ import {
   StarOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 
 interface MailItem {
   id: string
@@ -280,16 +281,28 @@ export default function MailboxPage() {
     setSummaryOpen(true)
     setSummaryLoading(true)
     setSummaryText('')
+    const sessionId = `mail-summary-${Date.now()}`
+    const unsubChunk = window.learn.hwai.onChunk((data) => {
+      if (data.sessionId === sessionId && data.delta) {
+        setSummaryText((prev) => prev + data.delta)
+      }
+    })
+    const unsubEnd = window.learn.hwai.onEnd((data) => {
+      if (data.sessionId === sessionId) setSummaryLoading(false)
+    })
     try {
       const content = `发件人：${from}\n主题：${subject}\n\n${body}`
       const askResult = await window.learn.hwai.tutorAsk(
         '__mail__',
         `请总结以下邮件内容，提取关键信息、待办事项和时间节点：\n${content.slice(0, 4000)}`,
+        sessionId,
       )
-      setSummaryText(askResult.ok ? (askResult.content || '总结失败') : '总结生成失败，请稍后重试')
+      if (!askResult.ok) setSummaryText(askResult.error || '总结生成失败，请稍后重试')
     } catch (err: any) {
       setSummaryText('总结失败：' + (err?.message || '未知错误'))
     } finally {
+      unsubChunk()
+      unsubEnd()
       setSummaryLoading(false)
     }
   }
@@ -513,13 +526,13 @@ export default function MailboxPage() {
         footer={null}
         width={600}
       >
-        {summaryLoading ? (
+        {summaryLoading && !summaryText ? (
           <div className="lp2-mail-modal-loading">
             <Spin />
             <p>正在总结邮件内容...</p>
           </div>
         ) : (
-          <div className="lp2-mail-summary">{summaryText}</div>
+          <MarkdownRenderer content={summaryText} />
         )}
       </Modal>
 

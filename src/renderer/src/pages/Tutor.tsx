@@ -10,6 +10,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuthStore } from '../store/auth'
 import { useTutorStore } from '../store/tutor'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import tutorAvatar from '../assets/sugarcane-tutor.png'
 
 const quickActions = [
@@ -239,18 +240,6 @@ export default function TutorPage() {
   }
 
 
-  function renderMessageContent(content: string) {
-    // Support basic newlines → <br/>
-    return content.split('\n').map((line, i) => (
-      <span key={i}>
-        {i > 0 && <br />}
-        <span dangerouslySetInnerHTML={line.startsWith('<span') ? { __html: line } : undefined}>
-          {line.startsWith('<span') ? undefined : line}
-        </span>
-      </span>
-    ))
-  }
-
   return (
     <div className="lp2-tutor-page">
       <div className="lp2-tutor-chat-layout">
@@ -261,7 +250,7 @@ export default function TutorPage() {
                 {msg.role === 'assistant' ? (
                   <img src={tutorAvatar} alt="甘蔗 Tutor" />
                 ) : null}
-                <div>{renderMessageContent(msg.content)}</div>
+                <div><MarkdownRenderer content={msg.content} /></div>
               </div>
             ))}
 
