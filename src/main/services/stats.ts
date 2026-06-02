@@ -145,8 +145,8 @@ export function computeDashboard(
 
   // Today focus: homework only, sorted by deadline urgency.
   const now = new Date()
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
-  const threeDaysLater = new Date(todayEnd.getTime() + 3 * 86400000)
+  const urgentMs = now.getTime() + 1 * 86400000
+  const soonMs = now.getTime() + 3 * 86400000
 
   const p0Items: TodayFocusItem[] = []
   const p1Items: TodayFocusItem[] = []
@@ -170,13 +170,13 @@ export function computeDashboard(
         targetTab: 'homework',
         targetId: hw.studentHomeworkId || hw.id,
       }
-      if (dl <= todayEnd) {
+      if (dl.getTime() <= urgentMs) {
         item.priority = 'P0'
-        item.tag = '今天截止'
+        item.tag = '1天内截止'
         p0Items.push(item)
-      } else if (dl <= threeDaysLater) {
+      } else if (dl.getTime() <= soonMs) {
         item.priority = 'P1'
-        item.tag = '即将截止'
+        item.tag = '3天内截止'
         p1Items.push(item)
       } else {
         item.priority = 'P2'

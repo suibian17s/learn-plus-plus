@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Empty, Form, Input, Modal, Spin, Tag, message } from 'antd'
 import {
   DeleteOutlined,
+  EditOutlined,
   ExportOutlined,
   InboxOutlined,
   LoginOutlined,
@@ -22,16 +23,14 @@ interface MailItem {
   id: string
   subject: string
   from: string
+  to: string
   date: string
   preview: string
   starred: boolean
   read: boolean
 }
 
-interface MailDetailData {
-  subject: string
-  from: string
-  date: string
+interface MailDetailData extends MailItem {
   body: string
   attachments: { name: string; url: string }[]
 }
@@ -48,11 +47,18 @@ function normalizeText(value?: string): string {
 }
 
 function stripHtml(value: string): string {
-  return value.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
     .trim()
 }
 
@@ -91,26 +97,33 @@ function extractReplyAddress(from: string): string {
   return normalizeText(angle?.[1] || from).replace(/^["']|["']$/g, '')
 }
 
+function displayCounterparty(mail: MailItem, folder: string): string {
+  const value = folder === 'sent' || folder === 'drafts' ? (mail.to || mail.from) : mail.from
+  return normalizeText(value) || '(未知联系人)'
+}
+
 export default function MailboxPage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const folder = searchParams.get('folder') || 'inbox'
   const refreshToken = searchParams.get('refresh') || ''
   const searchText = searchParams.get('q') || ''
   const filter = searchParams.get('filter') || 'all'
   const sortBy = searchParams.get('sort') || 'time'
+  const activeMailId = searchParams.get('mailId') || ''
+  const composeRequested = searchParams.get('compose') === '1'
 
   const [mails, setMails] = useState<MailItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mailLoggedIn, setMailLoggedIn] = useState<boolean | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<MailDetailData | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryText, setSummaryText] = useState('')
   const [composeOpen, setComposeOpen] = useState(false)
-  const [composeMode, setComposeMode] = useState<'reply' | 'forward'>('reply')
+  const [composeMode, setComposeMode] = useState<'write' | 'reply' | 'forward'>('write')
   const [composeSending, setComposeSending] = useState(false)
   const [composeForm] = Form.useForm()
 
@@ -145,7 +158,6 @@ export default function MailboxPage() {
 
   useEffect(() => {
     if (mailLoggedIn === true) {
-      setSelectedId(null)
       setDetail(null)
       loadMails()
     }
@@ -158,7 +170,7 @@ export default function MailboxPage() {
       if (filter === 'unread' && mail.read) return false
       if (filter === 'starred' && !mail.starred) return false
       if (!q) return true
-      return [mail.subject, mail.from, mail.preview].some((value) =>
+      return [mail.subject, mail.from, mail.to, mail.preview].some((value) =>
         normalizeText(value).toLowerCase().includes(q),
       )
     })
@@ -174,36 +186,31 @@ export default function MailboxPage() {
     return list
   }, [filter, mails, searchText, sortBy])
 
-  useEffect(() => {
-    if (filteredMails.length === 0) {
-      if (selectedId) {
-        setSelectedId(null)
-        setDetail(null)
-      }
-      return
-    }
-    if (!selectedId || !filteredMails.some((mail) => mail.id === selectedId)) {
-      setSelectedId(filteredMails[0].id)
-    }
-  }, [filteredMails, selectedId])
-
-  const selected = filteredMails.find((mail) => mail.id === selectedId) || null
+  const selected = mails.find((mail) => mail.id === activeMailId) || null
   const unreadCount = mails.filter((mail) => !mail.read).length
   const starredCount = mails.filter((mail) => mail.starred).length
 
   useEffect(() => {
-    if (!selectedId || !mailLoggedIn) return
+    if (!activeMailId || !mailLoggedIn) {
+      setDetail(null)
+      return
+    }
     let cancelled = false
     ;(async () => {
       setDetailLoading(true)
       setDetail(null)
       try {
-        const result = await window.learn.mail.get(selectedId)
+        const result = await window.learn.mail.get(activeMailId)
         if (!cancelled && result) {
           setDetail({
+            id: result.id,
             subject: result.subject,
             from: result.from,
+            to: result.to,
             date: result.date,
+            preview: result.preview,
+            starred: result.starred,
+            read: result.read,
             body: result.body || '',
             attachments: result.attachments || [],
           })
@@ -215,7 +222,29 @@ export default function MailboxPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [mailLoggedIn, selectedId])
+  }, [activeMailId, mailLoggedIn])
+
+  useEffect(() => {
+    if (!composeRequested) return
+    setComposeMode('write')
+    composeForm.resetFields()
+    setComposeOpen(true)
+  }, [composeRequested, composeForm])
+
+  function patchQuery(patch: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams)
+    params.set('folder', folder)
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) params.set(key, value)
+      else params.delete(key)
+    }
+    navigate(`/mailbox?${params.toString()}`)
+  }
+
+  function closeCompose() {
+    setComposeOpen(false)
+    if (composeRequested) patchQuery({ compose: null })
+  }
 
   async function handleLogin() {
     setLoading(true)
@@ -238,7 +267,6 @@ export default function MailboxPage() {
     await window.learn.mail.logout()
     setMailLoggedIn(false)
     setMails([])
-    setSelectedId(null)
     setDetail(null)
     message.success('已退出邮箱')
   }
@@ -250,6 +278,7 @@ export default function MailboxPage() {
         setMails((prev) => prev.map((mail) =>
           mail.id === mailId ? { ...mail, starred: !starred } : mail,
         ))
+        setDetail((prev) => prev?.id === mailId ? { ...prev, starred: !starred } : prev)
       }
     } catch {
       message.error('星标操作失败')
@@ -261,10 +290,7 @@ export default function MailboxPage() {
       const result = await window.learn.mail.delete(mailId)
       if (result.ok) {
         setMails((prev) => prev.filter((mail) => mail.id !== mailId))
-        if (selectedId === mailId) {
-          setSelectedId(null)
-          setDetail(null)
-        }
+        if (activeMailId === mailId) patchQuery({ mailId: null })
         message.success('已删除')
       }
     } catch {
@@ -273,10 +299,10 @@ export default function MailboxPage() {
   }
 
   async function handleTutorSummary() {
-    if (!detail && !selected) return
     const subject = detail?.subject || selected?.subject || ''
     const from = detail?.from || selected?.from || ''
     const body = detail?.body ? stripHtml(detail.body) : selected?.preview || ''
+    if (!subject && !body) return
 
     setSummaryOpen(true)
     setSummaryLoading(true)
@@ -299,7 +325,7 @@ export default function MailboxPage() {
       )
       if (!askResult.ok) setSummaryText(askResult.error || '总结生成失败，请稍后重试')
     } catch (err: any) {
-      setSummaryText('总结失败：' + (err?.message || '未知错误'))
+      setSummaryText(`总结失败：${err?.message || '未知错误'}`)
     } finally {
       unsubChunk()
       unsubEnd()
@@ -342,7 +368,7 @@ export default function MailboxPage() {
       })
       if (result.ok) {
         message.success('邮件已发送')
-        setComposeOpen(false)
+        closeCompose()
       } else {
         message.error(result.error || '发送失败，请使用“打开原站”手动发送')
       }
@@ -359,7 +385,7 @@ export default function MailboxPage() {
         <section className="lp2-mail-login-card">
           <span className="lp2-mail-login-icon"><LoginOutlined /></span>
           <h2>登录清华邮箱</h2>
-          <p>登录后 learn++ 会在后台读取邮件列表，原站窗口会自动隐藏，需要时可以随时打开。</p>
+          <p>登录后 Learn++ 会在后台同步邮件列表，并按时间整理收件箱、草稿箱、已发送和已删除。</p>
           <div className="lp2-mail-login-actions">
             <Button type="primary" size="large" icon={<LoginOutlined />} onClick={handleLogin}>
               登录邮箱
@@ -397,27 +423,21 @@ export default function MailboxPage() {
     )
   }
 
+  const detailMail = detail || selected
+
   return (
     <div className="lp2-mail-page">
-      <section className="lp2-mail-statusbar">
-        <div>
-          <span className="lp2-mail-status-icon"><InboxOutlined /></span>
-          <strong>{folderLabel}</strong>
-          <small>{filteredMails.length} / {mails.length} 封</small>
-        </div>
-        <div className="lp2-mail-status-tags">
-          <Tag>{unreadCount} 未读</Tag>
-          <Tag>{starredCount} 星标</Tag>
-        </div>
-        <div className="lp2-mail-status-actions">
-          <Button icon={<ReloadOutlined />} onClick={loadMails}>刷新</Button>
-          <Button icon={<ExportOutlined />} onClick={() => window.learn.mail.show()}>打开原站</Button>
-          <Button icon={<LogoutOutlined />} onClick={handleLogout}>退出</Button>
-        </div>
-      </section>
+      {!activeMailId ? (
+        <section className="lp2-mail-list-view" aria-label={`${folderLabel}邮件列表`}>
+          <header className="lp2-mail-list-summary">
+            <div>
+              <span className="lp2-mail-summary-icon"><InboxOutlined /></span>
+              <strong>{folderLabel}</strong>
+              <small>{filteredMails.length} / {mails.length} 封 · {unreadCount} 未读 · {starredCount} 星标</small>
+            </div>
+            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>退出邮箱</Button>
+          </header>
 
-      <div className="lp2-mail-layout">
-        <section className="lp2-mail-list" aria-label="邮件列表">
           {filteredMails.length === 0 ? (
             <div className="lp2-mail-list-empty">
               <Empty description={mails.length ? '当前筛选下没有邮件' : '未读取到邮件'}>
@@ -425,67 +445,98 @@ export default function MailboxPage() {
               </Empty>
             </div>
           ) : (
-            filteredMails.map((mail) => (
-              <button
-                key={mail.id}
-                type="button"
-                className={`lp2-mail-row${mail.id === selected?.id ? ' active' : ''}${!mail.read ? ' unread' : ''}`}
-                onClick={() => setSelectedId(mail.id)}
-              >
-                <span className="lp2-mail-row-main">
-                  <span className="lp2-mail-row-top">
-                    <strong>{mail.subject || '(无主题)'}</strong>
-                    <time>{mail.date}</time>
-                  </span>
-                  <small>{mail.from || '(未知发件人)'}</small>
-                  <em>{mail.preview || '暂无预览内容'}</em>
-                </span>
-                <span
-                  className="lp2-mail-row-star"
-                  role="button"
+            <div className="lp2-mail-table" role="table">
+              <div className="lp2-mail-table-head" role="row">
+                <span />
+                <span>{folder === 'sent' || folder === 'drafts' ? '收件人' : '发件人'}</span>
+                <span>主题</span>
+                <span>日期</span>
+                <span />
+              </div>
+              {filteredMails.map((mail) => (
+                <div
+                  key={mail.id}
+                  className={`lp2-mail-table-row${!mail.read ? ' unread' : ''}`}
+                  role="row"
                   tabIndex={0}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    handleStar(mail.id, mail.starred)
-                  }}
+                  onClick={() => patchQuery({ mailId: mail.id, compose: null })}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      event.stopPropagation()
-                      handleStar(mail.id, mail.starred)
+                      patchQuery({ mailId: mail.id, compose: null })
                     }
                   }}
                 >
-                  {mail.starred ? <StarFilled /> : <StarOutlined />}
-                </span>
-              </button>
-            ))
+                  <span className="lp2-mail-row-state" role="cell">
+                    <i aria-hidden="true" />
+                    <button
+                      type="button"
+                      aria-label={mail.starred ? '取消星标' : '添加星标'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleStar(mail.id, mail.starred)
+                      }}
+                    >
+                      {mail.starred ? <StarFilled /> : <StarOutlined />}
+                    </button>
+                  </span>
+                  <span className="lp2-mail-counterparty" role="cell">
+                    <strong>{displayCounterparty(mail, folder)}</strong>
+                    <small>{folderLabel}</small>
+                  </span>
+                  <span className="lp2-mail-subject" role="cell">
+                    <strong>{mail.subject || '(无主题)'}</strong>
+                    <small>{mail.preview || '暂无预览内容'}</small>
+                  </span>
+                  <time role="cell">{mail.date}</time>
+                  <span className="lp2-mail-open-cue" role="cell">›</span>
+                </div>
+              ))}
+            </div>
           )}
         </section>
+      ) : (
+        <article className="lp2-mail-detail-view">
+          <header className="lp2-mail-read-toolbar">
+            <Button icon={<RollbackOutlined />} onClick={() => patchQuery({ mailId: null })}>返回列表</Button>
+            <div>
+              {detailMail && (
+                <>
+                  <Button
+                    icon={detailMail.starred ? <StarFilled /> : <StarOutlined />}
+                    onClick={() => handleStar(detailMail.id, detailMail.starred)}
+                  />
+                  <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete(detailMail.id)} />
+                  <Button icon={<EditOutlined />} onClick={() => openCompose('reply')}>回复</Button>
+                  <Button icon={<ShareAltOutlined />} onClick={() => openCompose('forward')}>转发</Button>
+                  <Button icon={<ThunderboltOutlined />} onClick={handleConvertToFocus}>转为今日重点</Button>
+                  <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>
+                    甘蔗 Tutor 总结
+                  </Button>
+                </>
+              )}
+            </div>
+          </header>
 
-        <article className="lp2-mail-detail">
-          {!selected ? (
+          {!detailMail ? (
             <div className="lp2-mail-detail-empty">
-              <Empty description="请选择一封邮件" />
+              <Empty description="未找到这封邮件">
+                <Button onClick={() => patchQuery({ mailId: null })}>返回列表</Button>
+              </Empty>
             </div>
           ) : (
             <>
-              <header className="lp2-mail-detail-title">
-                <div>
-                  <Tag color="purple">{folderLabel}</Tag>
-                  <h2>{detail?.subject || selected.subject || '(无主题)'}</h2>
-                  <p>{detail?.from || selected.from || '(未知发件人)'} · {detail?.date || selected.date}</p>
-                </div>
-                <div className="lp2-mail-detail-tools">
-                  <Button
-                    icon={selected.starred ? <StarFilled /> : <StarOutlined />}
-                    onClick={() => handleStar(selected.id, selected.starred)}
-                  />
-                  <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete(selected.id)} />
-                </div>
-              </header>
+              <section className="lp2-mail-read-header">
+                <Tag color="purple">{folderLabel}</Tag>
+                <h1>{detailMail.subject || '(无主题)'}</h1>
+                <dl className="lp2-mail-read-meta">
+                  <div><dt>发件人</dt><dd>{detailMail.from || '(未知发件人)'}</dd></div>
+                  <div><dt>收件人</dt><dd>{detailMail.to || '(未读取到收件人)'}</dd></div>
+                  <div><dt>日期</dt><dd>{detailMail.date || '(未读取到日期)'}</dd></div>
+                </dl>
+              </section>
 
-              <div className="lp2-mail-body">
+              <section className="lp2-mail-read-body">
                 {detailLoading ? (
                   <div className="lp2-mail-body-loading"><Spin /></div>
                 ) : detail?.body ? (
@@ -494,7 +545,7 @@ export default function MailboxPage() {
                     dangerouslySetInnerHTML={{ __html: detail.body }}
                   />
                 ) : (
-                  <p>{selected.preview || '正文暂时无法读取，可打开原站查看。'}</p>
+                  <p>{detailMail.preview || '正文暂时无法读取，可打开原站查看。'}</p>
                 )}
 
                 {!!detail?.attachments?.length && (
@@ -504,27 +555,18 @@ export default function MailboxPage() {
                     ))}
                   </div>
                 )}
-              </div>
-
-              <footer className="lp2-mail-detail-actions">
-                <Button icon={<RollbackOutlined />} onClick={() => openCompose('reply')}>回复</Button>
-                <Button icon={<ShareAltOutlined />} onClick={() => openCompose('forward')}>转发</Button>
-                <Button icon={<ThunderboltOutlined />} onClick={handleConvertToFocus}>转为今日重点</Button>
-                <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>
-                  甘蔗 Tutor 总结
-                </Button>
-              </footer>
+              </section>
             </>
           )}
         </article>
-      </div>
+      )}
 
       <Modal
         title="甘蔗 Tutor 邮件总结"
         open={summaryOpen}
         onCancel={() => setSummaryOpen(false)}
         footer={null}
-        width={600}
+        width={640}
       >
         {summaryLoading && !summaryText ? (
           <div className="lp2-mail-modal-loading">
@@ -537,14 +579,14 @@ export default function MailboxPage() {
       </Modal>
 
       <Modal
-        title={composeMode === 'reply' ? '回复邮件' : '转发邮件'}
+        title={composeMode === 'write' ? '写邮件' : composeMode === 'reply' ? '回复邮件' : '转发邮件'}
         open={composeOpen}
-        onCancel={() => setComposeOpen(false)}
+        onCancel={closeCompose}
         onOk={handleSendCompose}
         okText="发送"
         cancelText="取消"
         confirmLoading={composeSending}
-        width={640}
+        width={660}
         destroyOnClose
       >
         <Form form={composeForm} layout="vertical" className="lp2-mail-compose-form">
@@ -555,7 +597,7 @@ export default function MailboxPage() {
             <Input placeholder="邮件主题" />
           </Form.Item>
           <Form.Item name="body" label="正文">
-            <Input.TextArea rows={9} placeholder="邮件正文..." />
+            <Input.TextArea rows={10} placeholder="邮件正文..." />
           </Form.Item>
         </Form>
       </Modal>

@@ -124,6 +124,7 @@ const api = {
     loginImap: (config: any) => ipcRenderer.invoke('mail:login-imap', config),
     testConnection: (config: any) => ipcRenderer.invoke('mail:test-connection', config),
     status: () => ipcRenderer.invoke('mail:status'),
+    check: () => ipcRenderer.invoke('mail:check'),
     list: (folder: string) => ipcRenderer.invoke('mail:list', folder),
     get: (mailId: string) => ipcRenderer.invoke('mail:get', mailId),
     star: (mailId: string, starred: boolean) =>

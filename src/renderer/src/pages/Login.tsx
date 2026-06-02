@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Button, message } from 'antd'
 import {
   ArrowRightOutlined,
-  CheckCircleOutlined,
   FileDoneOutlined,
   MessageOutlined,
   PieChartOutlined,
@@ -13,6 +12,7 @@ import {
 import { useAuthStore } from '../store/auth'
 import TsinghuaLogo from '../components/TsinghuaLogo'
 import WindowControls from '../components/WindowControls'
+import loginHeroIcon from '../assets/login-hero-icon.png'
 
 const LOGIN_URL = 'https://learn.tsinghua.edu.cn/'
 
@@ -87,14 +87,7 @@ export default function LoginPage() {
         </section>
 
         <section className="login-v2-card">
-          <div className="login-v2-shield" aria-hidden="true">
-            <span className="login-v2-orbit" />
-            <span className="login-v2-orbit second" />
-            <div className="login-v2-shield-mark">
-              <SafetyCertificateOutlined />
-            </div>
-            <span className="login-v2-check"><CheckCircleOutlined /></span>
-          </div>
+          <img className="login-v2-hero-icon" src={loginHeroIcon} alt="" aria-hidden="true" />
           <h2>欢迎使用 Learn++ <span>2.0</span></h2>
           <p>为保障账户安全，请使用清华大学统一身份认证登录</p>
 

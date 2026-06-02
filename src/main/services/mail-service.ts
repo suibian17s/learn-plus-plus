@@ -80,13 +80,107 @@ export function isMailLoggedIn(): boolean {
   return mailLoggedIn
 }
 
-async function getMailListUnified(folder: string): Promise<{ mails: MailItem[]; total: number }> {
+function normalizePlain(value?: string): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
+}
+
+function decodeEntitiesLight(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function htmlToPlainLines(html: string): string[] {
+  const text = decodeEntitiesLight(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, '\n')
+    .replace(/<script[\s\S]*?<\/script>/gi, '\n')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6]|blockquote|section|article)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\r/g, '\n')
+
+  return text
+    .split('\n')
+    .map((line) => normalizePlain(line))
+    .filter(Boolean)
+}
+
+function cleanMailBodyHtml(rawHtml: string, fallback = ''): string {
+  const noisePatterns = [
+    /^(收件箱|草稿箱|已发送|已删除|写信|通讯录|刷新|退出|打开原站)$/i,
+    /^(发件人|收件人|主题|日期|时间|回复|转发|删除|星标|全部设为已读)$/i,
+    /^https?:\/\//i,
+    /^(Inbox|Sent|Draft|Trash|Compose|Reply|Forward|Delete)$/i,
+  ]
+  const lines = htmlToPlainLines(rawHtml)
+    .filter((line) => line.length > 1)
+    .filter((line) => !noisePatterns.some((pattern) => pattern.test(line)))
+    .filter((line, index, arr) => arr.indexOf(line) === index)
+
+  const usableLines = lines.length ? lines : htmlToPlainLines(fallback)
+  if (!usableLines.length) return ''
+  return usableLines
+    .map((line) => `<p>${escapeHtml(line)}</p>`)
+    .join('')
+}
+
+function parseMailTimestamp(raw: string): number {
+  const value = normalizePlain(raw)
+  if (!value) return 0
+
+  const now = new Date()
+  const time = value.match(/(\d{1,2}):(\d{2})/)
+  if (/今天/.test(value)) {
+    const d = new Date(now)
+    if (time) d.setHours(Number(time[1]), Number(time[2]), 0, 0)
+    return d.getTime()
+  }
+  if (/昨天/.test(value)) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - 1)
+    if (time) d.setHours(Number(time[1]), Number(time[2]), 0, 0)
+    return d.getTime()
+  }
+  if (/^\d{1,2}:\d{2}$/.test(value)) {
+    const d = new Date(now)
+    d.setHours(Number(time?.[1] || 0), Number(time?.[2] || 0), 0, 0)
+    return d.getTime()
+  }
+
+  let normalized = value
+    .replace(/[年月.]/g, '-')
+    .replace(/日/g, ' ')
+    .replace(/\//g, '-')
+  if (/^\d{1,2}-\d{1,2}/.test(normalized)) normalized = `${now.getFullYear()}-${normalized}`
+  const parsed = Date.parse(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function sortMailItems(mails: MailItem[]): MailItem[] {
+  return [...mails].sort((a, b) => parseMailTimestamp(b.date) - parseMailTimestamp(a.date))
+}
+
+async function getMailListUnified(folder: string, force = false): Promise<{ mails: MailItem[]; total: number }> {
   if (mailMode === 'imap') {
-    const mails = await fetchMailList(folder)
+    const mails = sortMailItems(await fetchMailList(folder))
     listCache = { folder, mails, cachedAt: Date.now() }
     return { mails, total: mails.length }
   }
-  return getMailListWeb(folder)
+  return getMailListWeb(folder, force)
 }
 
 async function getMailDetailUnified(mailId: string): Promise<MailDetail | null> {
@@ -94,7 +188,18 @@ async function getMailDetailUnified(mailId: string): Promise<MailDetail | null> 
     const { body, attachments } = await fetchMailBody(mailId)
     // Get subject/from from list cache
     const cached = listCache?.mails.find(m => m.id === mailId)
-    return { id: mailId, subject: cached?.subject || '', from: cached?.from || '', to: cached?.to || '', date: cached?.date || '', preview: '', starred: false, read: true, body, attachments }
+    return {
+      id: mailId,
+      subject: cached?.subject || '',
+      from: cached?.from || '',
+      to: cached?.to || '',
+      date: cached?.date || '',
+      preview: '',
+      starred: cached?.starred || false,
+      read: true,
+      body: cleanMailBodyHtml(body, cached?.preview || ''),
+      attachments,
+    }
   }
   return getMailDetailWeb(mailId)
 }
@@ -108,6 +213,23 @@ async function sendMailUnified(params: { to: string; subject: string; body: stri
 export async function getMailList(folder: string) { return getMailListUnified(folder) }
 export async function getMailDetail(mailId: string) { return getMailDetailUnified(mailId) }
 export async function composeMail(params: { to: string; subject: string; body: string }) { return sendMailUnified(params) }
+export async function checkMailStatus(): Promise<{ loggedIn: boolean; unreadCount: number; latestId: string; total: number; mode: 'web' | 'imap' }> {
+  const loggedIn = isMailLoggedIn()
+  if (!loggedIn) return { loggedIn: false, unreadCount: 0, latestId: '', total: 0, mode: mailMode }
+  try {
+    const result = await getMailListUnified('inbox', true)
+    const mails = result.mails || []
+    return {
+      loggedIn: true,
+      unreadCount: mails.filter((mail) => !mail.read).length,
+      latestId: mails[0]?.id || '',
+      total: mails.length,
+      mode: mailMode,
+    }
+  } catch {
+    return { loggedIn, unreadCount: 0, latestId: '', total: 0, mode: mailMode }
+  }
+}
 const LIST_CACHE_MS = 5 * 60 * 1000
 const DETAIL_CACHE_MS = 30 * 60 * 1000
 
@@ -236,7 +358,7 @@ const MAIL_LIST_SCRIPT = `
     return matched ? clean(matched[0]) : '';
   }
 
-  for (var i = 0; i < candidates.length && items.length < 150; i++) {
+  for (var i = 0; i < candidates.length && items.length < 500; i++) {
     var row = candidates[i];
     var id = deriveId(row, i);
     if (seenId[id]) continue;
@@ -511,7 +633,7 @@ function delay(ms: number): Promise<void> {
 // ── Mail list ──
 
 async function scrollToLoadAll(win: BrowserWindow): Promise<void> {
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 30; i++) {
     const scrolled = await win.webContents.executeJavaScript(`
       (function () {
         var roots = [];
@@ -534,7 +656,38 @@ async function scrollToLoadAll(win: BrowserWindow): Promise<void> {
       })()
     `)
     if (!scrolled) break
-    await delay(600)
+    await delay(500)
+  }
+}
+
+async function clickNextPage(win: BrowserWindow): Promise<boolean> {
+  const raw = await win.webContents.executeJavaScript(`
+    (function () {
+      function clean(value) { return (value || '').replace(/\\s+/g, ' ').trim(); }
+      function disabled(node) {
+        var cls = String(node.className || '');
+        return node.disabled ||
+          node.getAttribute('aria-disabled') === 'true' ||
+          /disabled|disable|inactive/.test(cls);
+      }
+      var nodes = document.querySelectorAll('button, a, span[onclick], li[onclick], [role="button"]');
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (disabled(node)) continue;
+        var label = clean(node.innerText || node.textContent || node.getAttribute('title') || node.getAttribute('aria-label'));
+        if (!label) continue;
+        if (/^(下一页|下页|Next|next|>)$/.test(label) || /下一页|Next/i.test(label)) {
+          node.click();
+          return JSON.stringify({ clicked: true, label: label });
+        }
+      }
+      return JSON.stringify({ clicked: false });
+    })()
+  `)
+  try {
+    return !!JSON.parse(raw).clicked
+  } catch {
+    return false
   }
 }
 
@@ -618,19 +771,31 @@ async function ensureFolderReady(win: BrowserWindow, folder: string): Promise<vo
 async function scrapeMailList(win: BrowserWindow): Promise<MailItem[]> {
   const raw = await win.webContents.executeJavaScript(MAIL_LIST_SCRIPT)
   const items: MailItem[] = JSON.parse(raw)
-  return items.filter((item) => item.id && item.subject)
+  return sortMailItems(items.filter((item) => item.id && item.subject))
 }
 
-async function getMailListWeb(folder: string): Promise<{ mails: MailItem[]; total: number }> {
+async function getMailListWeb(folder: string, force = false): Promise<{ mails: MailItem[]; total: number }> {
   if (!mailLoggedIn) throw new Error('邮箱未登录，请先登录清华邮箱')
-  if (listCache && listCache.folder === folder && Date.now() - listCache.cachedAt < LIST_CACHE_MS) {
+  if (!force && listCache && listCache.folder === folder && Date.now() - listCache.cachedAt < LIST_CACHE_MS) {
     return { mails: listCache.mails, total: listCache.mails.length }
   }
 
   const win = await ensureMailWindow()
 
   await ensureFolderReady(win, folder)
-  let items = await scrapeMailList(win)
+  const seen = new Map<string, MailItem>()
+  for (let page = 0; page < 20; page++) {
+    await scrollToLoadAll(win)
+    const pageItems = await scrapeMailList(win)
+    for (const item of pageItems) {
+      if (!seen.has(item.id)) seen.set(item.id, item)
+    }
+    const clickedNext = await clickNextPage(win)
+    if (!clickedNext) break
+    await delay(1500)
+  }
+
+  let items = sortMailItems(Array.from(seen.values()))
   if (items.length === 0) {
     win.loadURL(MAIL_BASE)
     await waitForLoad(win, 2600)
@@ -649,6 +814,7 @@ async function getMailDetailWeb(mailId: string): Promise<MailDetail | null> {
 
   const cached = detailCache.get(mailId)
   if (cached && Date.now() - cached.cachedAt < DETAIL_CACHE_MS) return cached.mail
+  const cachedListItem = listCache?.mails.find(m => m.id === mailId)
 
   const win = await ensureMailWindow()
 
@@ -722,21 +888,23 @@ async function getMailDetailWeb(mailId: string): Promise<MailDetail | null> {
     JSON.stringify({
       subject: (document.querySelector('h1, h2, .subject, .mail_title, [class*="subject"], [class*="title"]') || {}).textContent || document.title || '',
       from: (document.querySelector('.sender, .from, [class*="sender"], [class*="from"], [class*="author"]') || {}).textContent || '',
+      to: (document.querySelector('.recipient, .to, [class*="recipient"], [class*="to"]') || {}).textContent || '',
       date: (document.querySelector('.time, .date, [class*="time"], [class*="date"]') || {}).textContent || '',
     })
   `)
   const meta = JSON.parse(metaRaw)
+  const body = bodyFound ? cleanMailBodyHtml(detail.bodyHtml || '', cachedListItem?.preview || '') : ''
 
   const mail: MailDetail = {
     id: mailId,
-    subject: (meta.subject || '').trim() || '(无主题)',
-    from: (meta.from || '').trim(),
-    to: '',
-    date: (meta.date || '').trim(),
-    preview: '',
-    starred: false,
+    subject: normalizePlain(cachedListItem?.subject || meta.subject) || '(无主题)',
+    from: normalizePlain(cachedListItem?.from || meta.from),
+    to: normalizePlain(cachedListItem?.to || meta.to),
+    date: normalizePlain(cachedListItem?.date || meta.date),
+    preview: cachedListItem?.preview || htmlToPlainLines(body).join(' ').slice(0, 180),
+    starred: cachedListItem?.starred || false,
     read: true,
-    body: bodyFound ? (detail.bodyHtml || '') : '',
+    body,
     attachments: detail.attachments || [],
   }
 

@@ -5,8 +5,8 @@ import { useAuthStore } from '../store/auth'
 import CourseIcon from '../components/CourseIcon'
 
 const priorityColors: Record<string, { bg: string; border: string; text: string; tag: string }> = {
-  P0: { bg: '#FFF7F5', border: '#FFD8D1', text: '#C2410C', tag: '#EA580C' },
-  P1: { bg: '#FFFBEA', border: '#F8DF8B', text: '#9A6700', tag: '#B7791F' },
+  P0: { bg: '#FFF1F2', border: '#FECDD3', text: '#B91C1C', tag: '#DC2626' },
+  P1: { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C', tag: '#D97706' },
   P2: { bg: '#F5F3FF', border: '#DDD6FE', text: '#5B21B6', tag: '#6B46C1' },
 }
 
@@ -14,13 +14,11 @@ function classifyDeadline(raw: string): { priority: 'P0' | 'P1' | 'P2'; tag: str
   const dl = new Date(raw)
   if (isNaN(dl.getTime()) || dl < new Date()) return null
   const now = new Date()
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
-  const threeDaysLater = new Date(todayEnd.getTime() + 3 * 86400000)
   const deadlineText = `${dl.getMonth() + 1}/${dl.getDate()} ${String(dl.getHours()).padStart(2, '0')}:${String(dl.getMinutes()).padStart(2, '0')}`
   const remainingDays = Math.max(0, Math.ceil((dl.getTime() - now.getTime()) / 86400000))
   const tag = `剩余 ${remainingDays} 天`
-  if (dl <= todayEnd) return { priority: 'P0', tag, deadlineText, deadlineTime: dl.getTime() }
-  if (dl <= threeDaysLater) return { priority: 'P1', tag, deadlineText, deadlineTime: dl.getTime() }
+  if (remainingDays <= 1) return { priority: 'P0', tag, deadlineText, deadlineTime: dl.getTime() }
+  if (remainingDays <= 3) return { priority: 'P1', tag, deadlineText, deadlineTime: dl.getTime() }
   return { priority: 'P2', tag, deadlineText, deadlineTime: dl.getTime() }
 }
 

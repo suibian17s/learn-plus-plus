@@ -13,12 +13,11 @@ import {
   LogoutOutlined,
   MailOutlined,
   MessageOutlined,
-  MoreOutlined,
+  EditOutlined,
   ReloadOutlined,
   RobotOutlined,
   SearchOutlined,
   SettingOutlined,
-  StarOutlined,
   SwapOutlined,
   UserAddOutlined,
 } from '@ant-design/icons'
@@ -66,6 +65,7 @@ export default function AppShell() {
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)
   const [mailSubOpen, setMailSubOpen] = useState(false)
+  const [mailHasNew, setMailHasNew] = useState(false)
 
   const pathParts = location.pathname.split('/')
   const isCourseRoute = location.pathname.startsWith('/course/')
@@ -164,6 +164,45 @@ export default function AppShell() {
     })
     return () => { unsub() }
   }, [addOrUpdate])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function checkMailInbox() {
+      try {
+        const status = await window.learn.mail.check()
+        if (cancelled) return
+        if (!status.loggedIn || !status.latestId) {
+          if (!status.loggedIn) setMailHasNew(false)
+          return
+        }
+
+        const storageKey = 'learnpp:last-mail-latest-id'
+        const previousLatestId = localStorage.getItem(storageKey)
+        if (location.pathname.startsWith('/mailbox')) {
+          localStorage.setItem(storageKey, status.latestId)
+          setMailHasNew(false)
+          return
+        }
+
+        if (!previousLatestId) {
+          localStorage.setItem(storageKey, status.latestId)
+          setMailHasNew(false)
+        } else {
+          setMailHasNew(previousLatestId !== status.latestId)
+        }
+      } catch {
+        // The mailbox may not be logged in yet. Keep the sidebar quiet.
+      }
+    }
+
+    checkMailInbox()
+    const timer = window.setInterval(checkMailInbox, 120000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [location.pathname])
 
   function isAuthErrorMessage(msg: string): boolean {
     const lower = msg.toLowerCase()
@@ -389,13 +428,16 @@ export default function AppShell() {
     }
   }
 
-  function updateMailQuery(patch: Record<string, string>) {
+  function updateMailQuery(patch: Record<string, string | null>) {
     const params = new URLSearchParams(location.search)
     const folder = params.get('folder') || 'inbox'
     params.set('folder', folder)
     for (const [key, value] of Object.entries(patch)) {
       if (value) params.set(key, value)
       else params.delete(key)
+    }
+    if ('q' in patch || 'filter' in patch || 'sort' in patch || 'refresh' in patch || 'folder' in patch) {
+      params.delete('mailId')
     }
     navigate(`/mailbox?${params.toString()}`)
   }
@@ -488,28 +530,46 @@ export default function AppShell() {
 
     if (isMailboxRoute) {
       const params = new URLSearchParams(location.search)
+      const activeFilter = params.get('filter') || 'all'
       return (
         <div className="lp2-context-head lp2-mail-context-head">
           <Input
             prefix={<SearchOutlined />}
-            placeholder="搜索邮件"
+            placeholder="搜索邮件、课程通知"
             allowClear
             value={params.get('q') || ''}
             onChange={(e) => updateMailQuery({ q: e.target.value })}
           />
-          <Select
-            value={params.get('filter') || 'all'}
-            onChange={(value) => updateMailQuery({ filter: value })}
-            options={[{ value: 'all', label: '全部' }, { value: 'unread', label: '未读' }, { value: 'starred', label: '星标' }]}
-          />
+          <div className="lp2-mail-filter-tabs" role="group" aria-label="邮件筛选">
+            {([
+              { value: 'all', label: '全部' },
+              { value: 'unread', label: '未读' },
+              { value: 'starred', label: '星标' },
+            ] as const).map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={activeFilter === item.value ? 'active' : ''}
+                onClick={() => updateMailQuery({ filter: item.value })}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
           <Select
             value={params.get('sort') || 'time'}
             onChange={(value) => updateMailQuery({ sort: value })}
-            options={[{ value: 'time', label: '时间排序' }, { value: 'star', label: '星标优先' }]}
+            options={[{ value: 'time', label: '排序：最新' }, { value: 'star', label: '星标优先' }]}
           />
           <Button icon={<ReloadOutlined />} onClick={() => updateMailQuery({ refresh: String(Date.now()) })} />
-          <Button icon={<StarOutlined />} onClick={() => updateMailQuery({ filter: 'starred' })} />
-          <Button icon={<MoreOutlined />} onClick={() => window.learn.mail.show()} />
+          <Button
+            type="primary"
+            className="lp2-mail-compose-button"
+            icon={<EditOutlined />}
+            onClick={() => updateMailQuery({ compose: '1' })}
+          >
+            写邮件
+          </Button>
         </div>
       )
     }
@@ -561,12 +621,14 @@ export default function AppShell() {
                         setMailSubOpen(false)
                       } else {
                         setMailSubOpen(true)
+                        setMailHasNew(false)
                         navigate('/mailbox?folder=inbox')
                       }
                     }}
                   >
                     <span className="lp2-nav-icon">{item.icon}</span>
                     <span>{item.label}</span>
+                    {mailHasNew && <span className="lp2-mail-new-dot" aria-label="有新邮件" />}
                   </button>
                   <div className={`mail-submenu${mailSubOpen ? ' open' : ''}`}>
                     {([
@@ -584,6 +646,7 @@ export default function AppShell() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
+                            setMailHasNew(false)
                             navigate(`/mailbox?folder=${folder.key}`)
                           }}
                         >

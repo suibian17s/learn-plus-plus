@@ -105,6 +105,7 @@ interface LearnApi {
     loginImap: (config: { imapHost: string; imapPort: number; imapTls: boolean; smtpHost: string; smtpPort: number; smtpTls: boolean; username: string; password: string }) => Promise<{ ok: boolean }>
     testConnection: (config: { imapHost: string; imapPort: number; imapTls: boolean; smtpHost: string; smtpPort: number; smtpTls: boolean; username: string; password: string }) => Promise<{ ok: boolean }>
     status: () => Promise<{ loggedIn: boolean }>
+    check: () => Promise<{ loggedIn: boolean; unreadCount: number; latestId: string; total: number; mode: 'web' | 'imap' }>
     list: (folder: string) => Promise<{ mails: { id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
     get: (mailId: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean; body: string; attachments: { name: string; url: string }[] } | null>
     star: (mailId: string, starred: boolean) => Promise<{ ok: boolean }>
