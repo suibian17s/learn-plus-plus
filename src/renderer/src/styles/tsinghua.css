@@ -7864,3 +7864,56 @@ html.lp2-window-closing .login-v2-frame {
     grid-template-columns: 66px minmax(130px, 0.8fr) minmax(220px, 1.6fr) 96px 20px !important;
   }
 }
+
+.lp2-imap-login-card {
+  width: min(760px, 100%) !important;
+  text-align: left !important;
+}
+
+.lp2-imap-login-card .lp2-mail-login-icon {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.lp2-imap-login-card h2,
+.lp2-imap-login-card p {
+  text-align: left !important;
+  margin-left: 0 !important;
+}
+
+.lp2-imap-login-alert {
+  margin: 0 0 18px !important;
+  border-radius: 14px !important;
+  background: rgba(245, 241, 255, 0.72) !important;
+  border-color: rgba(216, 207, 232, 0.78) !important;
+}
+
+.lp2-imap-login-form {
+  width: 100% !important;
+}
+
+.lp2-imap-form-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  column-gap: 16px !important;
+}
+
+.lp2-imap-login-form .ant-form-item {
+  margin-bottom: 14px !important;
+}
+
+.lp2-imap-switches {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 16px !important;
+}
+
+.lp2-imap-switches .ant-form-item {
+  margin-bottom: 4px !important;
+}
+
+@media (max-width: 760px) {
+  .lp2-imap-form-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import {
-  connectMail, disconnectMail, fetchMailList, fetchMailBody, sendMail as imapSendMail,
+  connectMail, fetchMailList, fetchMailBody, sendMail as imapSendMail,
   testMailConnection as _testMailConnection, isMailConnected, setImapStarred, deleteImapMail,
 } from './mail-imap'
 import type { MailConfig } from './mail-imap'
@@ -28,8 +28,7 @@ export interface MailDetail extends MailItem {
 
 let mailWindow: BrowserWindow | null = null
 let mailLoggedIn = false
-let mailMode: 'web' | 'imap' = 'web'
-let loginResolve: ((ok: boolean) => void) | null = null
+let mailMode: 'web' | 'imap' = 'imap'
 let listCache: { folder: string; mails: MailItem[]; cachedAt: number } | null = null
 const detailCache: Map<string, { mail: MailDetail; cachedAt: number }> = new Map()
 
@@ -540,7 +539,7 @@ const MAIL_DETAIL_SCRIPT = `
 // ── Login ──
 
 export async function loginMail(): Promise<boolean> {
-  if (mailLoggedIn) return true
+  if (mailMode === 'imap' && isMailConnected()) return true
 
   const imapConfig = getMailConfigFromSettings()
   if (imapConfig) {
@@ -548,63 +547,9 @@ export async function loginMail(): Promise<boolean> {
     if (ok) return true
   }
 
-  return new Promise((resolve) => {
-    loginResolve = resolve
-
-    mailWindow = new BrowserWindow({
-      width: 960,
-      height: 700,
-      title: '登录清华邮箱 — 登录成功后窗口将自动隐藏',
-      webPreferences: { nodeIntegration: false, contextIsolation: true },
-    })
-    mailWindow.loadURL(MAIL_BASE)
-    mailWindow.setMenu(null)
-
-    // Poll every 2 seconds to detect when user reaches inbox
-    const pollInterval = setInterval(async () => {
-      if (!mailWindow || mailWindow.isDestroyed()) {
-        clearInterval(pollInterval)
-        return
-      }
-      try {
-        const raw = await mailWindow.webContents.executeJavaScript(MAILBOX_CHECK_SCRIPT)
-        const status = JSON.parse(raw)
-        if (status.ok && !status.isLogin) {
-          clearInterval(pollInterval)
-          mailMode = 'web'
-          mailLoggedIn = true
-          listCache = null
-          detailCache.clear()
-          try {
-            await ensureFolderReady(mailWindow, 'inbox')
-          } catch {
-            // The next list request will retry folder preparation.
-          }
-          mailWindow.hide()
-          if (loginResolve) { loginResolve(true); loginResolve = null }
-        }
-      } catch {
-        // Page might be loading or navigating, keep polling
-      }
-    }, 2000)
-
-    mailWindow.on('closed', () => {
-      clearInterval(pollInterval)
-      mailWindow = null
-      if (!mailLoggedIn) {
-        mailLoggedIn = false
-        if (loginResolve) { loginResolve(false); loginResolve = null }
-      }
-    })
-
-    // 15-minute timeout
-    setTimeout(() => {
-      clearInterval(pollInterval)
-      if (!mailLoggedIn && mailWindow && !mailWindow.isDestroyed()) {
-        mailWindow.close()
-      }
-    }, 15 * 60 * 1000)
-  })
+  mailMode = 'imap'
+  mailLoggedIn = false
+  return false
 }
 
 // ── Ensure window is available for scraping ──

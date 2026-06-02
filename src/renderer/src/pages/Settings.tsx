@@ -41,16 +41,23 @@ export default function SettingsPage() {
   useEffect(() => {
     window.learn.settings.getAll().then((loaded) => {
       setSettings(loaded)
-      form.setFieldsValue(loaded)
+      form.setFieldsValue({
+        mailImapHost: 'mails.tsinghua.edu.cn',
+        mailImapPort: 993,
+        mailImapTls: true,
+        mailSmtpHost: 'mails.tsinghua.edu.cn',
+        mailSmtpPort: 465,
+        mailSmtpTls: true,
+        ...loaded,
+        mailMode: 'imap',
+      })
     })
   }, [form])
-
-  const mailMode = Form.useWatch('mailMode', form) || settings.mailMode || 'web'
 
   async function handleSave(values: any) {
     setLoading(true)
     try {
-      const updated = await window.learn.settings.set(values)
+      const updated = await window.learn.settings.set({ ...values, mailMode: 'imap' })
       setSettings((s: any) => ({ ...s, ...updated }))
       await refreshProviderKeyState(values.aiProvider || selectedProvider)
       message.success('设置已保存')
@@ -130,6 +137,17 @@ export default function SettingsPage() {
     const values = form.getFieldsValue()
     if (!values.mailUsername) { message.error('请填写邮箱账号'); return }
     message.loading({ key: 'mail-imap', content: '正在连接...' })
+    await window.learn.settings.set({
+      ...values,
+      mailMode: 'imap',
+      mailImapPort: Number(values.mailImapPort || 993),
+      mailSmtpPort: Number(values.mailSmtpPort || 465),
+      mailImapTls: values.mailImapTls !== false,
+      mailSmtpTls: values.mailSmtpTls !== false,
+    })
+    if (mailPasswordInput.trim()) {
+      await window.learn.settings.setApiKey(mailPasswordInput, 'mail')
+    }
     const ok = await window.learn.mail.loginImap({
       imapHost: values.mailImapHost || 'mails.tsinghua.edu.cn',
       imapPort: values.mailImapPort || 993,
@@ -143,12 +161,6 @@ export default function SettingsPage() {
     message.destroy('mail-imap')
     if (ok) message.success('邮箱已连接')
     else message.error('连接失败')
-  }
-
-  async function handleLoginWeb() {
-    const r = await window.learn.mail.login()
-    if (r.ok) message.success('邮箱登录成功')
-    else message.error('登录超时或取消')
   }
 
   async function handleResetRisk() {
@@ -224,59 +236,51 @@ export default function SettingsPage() {
           title={<Space><LoginOutlined /> 邮箱配置</Space>}
           size="small"
         >
-          <Form.Item name="mailMode" label="接入方式">
-            <Select
-              options={[
-                { value: 'web', label: '网页登录（打开浏览器窗口）' },
-                { value: 'imap', label: 'IMAP/SMTP 协议（类似 Outlook）' },
-              ]}
-            />
+          <Alert
+            type="info"
+            showIcon
+            message="邮箱功能现在仅使用 IMAP/SMTP。网页登录抓取已隐藏，以避免页面结构导致的显示错乱。"
+            style={{ marginBottom: 16 }}
+          />
+          <Form.Item name="mailMode" hidden>
+            <Input />
           </Form.Item>
-
-          {mailMode === 'imap' ? (
-            <>
-              <Form.Item name="mailImapHost" label="IMAP 服务器">
-                <Input placeholder="mails.tsinghua.edu.cn" />
-              </Form.Item>
-              <Form.Item label="IMAP 端口 / 加密">
-                <Space>
-                  <Form.Item name="mailImapPort" noStyle><Input placeholder="993" style={{ width: 100 }} /></Form.Item>
-                  <Form.Item name="mailImapTls" noStyle valuePropName="checked"><Switch checkedChildren="SSL" unCheckedChildren="无" /></Form.Item>
-                </Space>
-              </Form.Item>
-              <Form.Item name="mailSmtpHost" label="SMTP 服务器">
-                <Input placeholder="mails.tsinghua.edu.cn" />
-              </Form.Item>
-              <Form.Item label="SMTP 端口 / 加密">
-                <Space>
-                  <Form.Item name="mailSmtpPort" noStyle><Input placeholder="465" style={{ width: 100 }} /></Form.Item>
-                  <Form.Item name="mailSmtpTls" noStyle valuePropName="checked"><Switch checkedChildren="SSL" unCheckedChildren="STARTTLS" /></Form.Item>
-                </Space>
-              </Form.Item>
-              <Form.Item name="mailUsername" label="邮箱账号">
-                <Input placeholder="username@mails.tsinghua.edu.cn" />
-              </Form.Item>
-              <Form.Item label="密码 / 专用密码">
-                <Space>
-                  <Input.Password
-                    placeholder="两步验证用户请使用客户端专用密码"
-                    value={mailPasswordInput}
-                    onChange={(e) => setMailPasswordInput(e.target.value)}
-                    style={{ width: 280 }}
-                  />
-                  <Button onClick={handleSaveMailPassword}>保存密码</Button>
-                </Space>
-              </Form.Item>
-              <Form.Item>
-                <Button onClick={handleTestMailConnection}>测试连接</Button>
-                <Button type="primary" onClick={handleLoginImap} style={{ marginLeft: 8 }}>登录邮箱</Button>
-              </Form.Item>
-            </>
-          ) : (
-            <Form.Item label=" ">
-              <Button onClick={handleLoginWeb}>打开网页登录</Button>
-            </Form.Item>
-          )}
+          <Form.Item name="mailImapHost" label="IMAP 服务器">
+            <Input placeholder="mails.tsinghua.edu.cn" />
+          </Form.Item>
+          <Form.Item label="IMAP 端口 / 加密">
+            <Space>
+              <Form.Item name="mailImapPort" noStyle><Input placeholder="993" style={{ width: 100 }} /></Form.Item>
+              <Form.Item name="mailImapTls" noStyle valuePropName="checked"><Switch checkedChildren="SSL" unCheckedChildren="无" /></Form.Item>
+            </Space>
+          </Form.Item>
+          <Form.Item name="mailSmtpHost" label="SMTP 服务器">
+            <Input placeholder="mails.tsinghua.edu.cn" />
+          </Form.Item>
+          <Form.Item label="SMTP 端口 / 加密">
+            <Space>
+              <Form.Item name="mailSmtpPort" noStyle><Input placeholder="465" style={{ width: 100 }} /></Form.Item>
+              <Form.Item name="mailSmtpTls" noStyle valuePropName="checked"><Switch checkedChildren="SSL" unCheckedChildren="STARTTLS" /></Form.Item>
+            </Space>
+          </Form.Item>
+          <Form.Item name="mailUsername" label="邮箱账号">
+            <Input placeholder="username@mails.tsinghua.edu.cn" />
+          </Form.Item>
+          <Form.Item label="密码 / 专用密码">
+            <Space>
+              <Input.Password
+                placeholder="两步验证用户请使用客户端专用密码"
+                value={mailPasswordInput}
+                onChange={(e) => setMailPasswordInput(e.target.value)}
+                style={{ width: 280 }}
+              />
+              <Button onClick={handleSaveMailPassword}>保存密码</Button>
+            </Space>
+          </Form.Item>
+          <Form.Item>
+            <Button onClick={handleTestMailConnection}>测试连接</Button>
+            <Button type="primary" onClick={handleLoginImap} style={{ marginLeft: 8 }}>登录邮箱</Button>
+          </Form.Item>
         </Card>
 
         <Card

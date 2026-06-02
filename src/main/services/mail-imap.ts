@@ -14,18 +14,133 @@ export interface MailConfig {
   password: string
 }
 
+const MAIL_FETCH_LIMIT = 300
+
 let activeConfig: MailConfig | null = null
 let imapClient: Imap | null = null
 let smtpTransport: nodemailer.Transporter | null = null
+let cachedMailboxNames: string[] | null = null
 
-// ── Connection ──
+const FOLDER_CANDIDATES: Record<string, string[]> = {
+  inbox: ['INBOX', 'Inbox', '收件箱'],
+  sent: ['Sent', 'Sent Messages', 'Sent Mail', '已发送', '已发送邮件', '发件箱', '发件箱邮件'],
+  drafts: ['Drafts', 'Draft', '草稿箱', '草稿'],
+  trash: ['Trash', 'Deleted Messages', 'Deleted Items', 'Deleted', '已删除', '已删除邮件', '废纸篓', '垃圾箱'],
+}
+
+function normalizeMailboxName(value: string): string {
+  return value
+    .replace(/\\/g, '/')
+    .replace(/\s+/g, '')
+    .toLowerCase()
+}
+
+function flattenBoxes(boxes: any, prefix = ''): string[] {
+  const names: string[] = []
+  for (const [name, box] of Object.entries(boxes || {})) {
+    const data = box as any
+    const delimiter = data.delimiter || '/'
+    const fullName = prefix ? `${prefix}${delimiter}${name}` : name
+    names.push(fullName)
+    names.push(...flattenBoxes(data.children, fullName))
+  }
+  return names
+}
+
+function listMailboxes(): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    if (!imapClient) return reject(new Error('邮箱未连接'))
+    if (cachedMailboxNames) return resolve(cachedMailboxNames)
+    imapClient.getBoxes((err, boxes) => {
+      if (err) return reject(err)
+      cachedMailboxNames = flattenBoxes(boxes)
+      resolve(cachedMailboxNames)
+    })
+  })
+}
+
+async function resolveMailboxName(folder: string): Promise<string> {
+  if (folder === 'inbox') return 'INBOX'
+  const candidates = FOLDER_CANDIDATES[folder] || [folder]
+  const mailboxes = await listMailboxes()
+  const normalizedCandidates = candidates.map(normalizeMailboxName)
+
+  const exact = mailboxes.find((name) => normalizedCandidates.includes(normalizeMailboxName(name)))
+  if (exact) return exact
+
+  const byLastSegment = mailboxes.find((name) => {
+    const last = name.split(/[\\/]/).pop() || name
+    return normalizedCandidates.includes(normalizeMailboxName(last))
+  })
+  if (byLastSegment) return byLastSegment
+
+  const byContains = mailboxes.find((name) => {
+    const normalized = normalizeMailboxName(name)
+    return normalizedCandidates.some((candidate) => normalized.includes(candidate))
+  })
+  return byContains || candidates[0]
+}
+
+function openFolder(folder: string): Promise<any> {
+  return new Promise(async (resolve, reject) => {
+    if (!imapClient) return reject(new Error('邮箱未连接'))
+    try {
+      const boxName = await resolveMailboxName(folder)
+      imapClient.openBox(boxName, false, (err, box) => {
+        if (err) return reject(err)
+        resolve(box)
+      })
+    } catch (err: any) {
+      reject(err)
+    }
+  })
+}
+
+function formatMailDate(value?: Date, fallback = ''): string {
+  if (!value || Number.isNaN(value.getTime())) return fallback
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  const hour = String(value.getHours()).padStart(2, '0')
+  const minute = String(value.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
+
+function addressText(value: any): string {
+  if (!value) return ''
+  if (Array.isArray(value)) return value.map(addressText).filter(Boolean).join(', ')
+  if (value.text) return String(value.text)
+  if (Array.isArray(value.value)) {
+    return value.value
+      .map((item: any) => item.name ? `${item.name} <${item.address || ''}>` : item.address)
+      .filter(Boolean)
+      .join(', ')
+  }
+  return String(value)
+}
+
+function parseHeaderMessage(header: string, flags: string[], uid: number): Promise<MailItem> {
+  return simpleParser(Buffer.from(header)).then((parsed) => ({
+    id: String(uid),
+    subject: parsed.subject || '(无主题)',
+    from: addressText(parsed.from),
+    to: addressText(parsed.to),
+    date: formatMailDate(parsed.date, ''),
+    preview: '',
+    starred: flags.includes('\\Flagged'),
+    read: flags.includes('\\Seen'),
+  }))
+}
+
+function sortByDateDesc(items: MailItem[]): MailItem[] {
+  return [...items].sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+}
 
 export function connectMail(config: MailConfig): Promise<boolean> {
   return new Promise((resolve) => {
     disconnectMail()
 
-    activeConfig = config
-    imapClient = new Imap({
+    const client = new Imap({
       user: config.username,
       password: config.password,
       host: config.imapHost,
@@ -36,16 +151,20 @@ export function connectMail(config: MailConfig): Promise<boolean> {
       authTimeout: 15000,
     })
 
-    imapClient.once('ready', () => {
+    client.once('ready', () => {
+      imapClient = client
+      activeConfig = config
+      cachedMailboxNames = null
       resolve(true)
     })
 
-    imapClient.once('error', (err: Error) => {
-      imapClient = null
+    client.once('error', () => {
+      try { client.end() } catch { /* ignore */ }
+      if (imapClient === client) imapClient = null
       resolve(false)
     })
 
-    imapClient.connect()
+    client.connect()
   })
 }
 
@@ -54,145 +173,121 @@ export function disconnectMail(): void {
   imapClient = null
   smtpTransport = null
   activeConfig = null
+  cachedMailboxNames = null
 }
 
 export function isMailConnected(): boolean {
   return imapClient !== null && imapClient.state === 'authenticated'
 }
 
-// ── Fetch mail list ──
-
 export function fetchMailList(folder: string): Promise<MailItem[]> {
-  return new Promise((resolve, reject) => {
-    if (!imapClient) return reject(new Error('未连接邮箱'))
+  return new Promise(async (resolve, reject) => {
+    if (!imapClient) return reject(new Error('邮箱未连接'))
 
-    const boxName = folder === 'sent' ? '[Gmail]/Sent Mail' :
-      folder === 'drafts' ? '[Gmail]/Drafts' :
-      folder === 'trash' ? '[Gmail]/Trash' : 'INBOX'
+    try {
+      const box = await openFolder(folder)
+      const total = box.messages.total
+      if (total === 0) return resolve([])
 
-    imapClient.openBox(boxName, false, (err, box) => {
-      if (err) {
-        // Try alternate names
-        const alt = folder === 'sent' ? 'Sent' :
-          folder === 'drafts' ? 'Drafts' :
-          folder === 'trash' ? 'Trash' : 'INBOX'
-        imapClient!.openBox(alt, false, (err2, box2) => {
-          if (err2) return reject(err2)
-          fetchMessages(box2, resolve, reject)
-        })
-        return
-      }
-      fetchMessages(box, resolve, reject)
-    })
-  })
-}
-
-function fetchMessages(box: any, resolve: (items: MailItem[]) => void, reject: (err: Error) => void): void {
-  const total = box.messages.total
-  if (total === 0) return resolve([])
-
-  const from = Math.max(1, total - 99)
-  const f = imapClient!.seq.fetch(`${from}:${total}`, {
-    bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE)',
-    struct: true,
-  })
-
-  const items: MailItem[] = []
-  f.on('message', (msg: any, seqno: number) => {
-    let header = ''
-    let flags: string[] = []
-    msg.on('body', (stream: any) => {
-      stream.on('data', (chunk: Buffer) => { header += chunk.toString('utf-8') })
-    })
-    msg.once('attributes', (attrs: any) => {
-      flags = attrs.flags || []
-    })
-    msg.once('end', () => {
-      const subject = (header.match(/^Subject:\s*(.+)$/im) || [])[1]?.trim() || '(无主题)'
-      const fromAddr = (header.match(/^From:\s*(.+)$/im) || [])[1]?.trim() || ''
-      const date = (header.match(/^Date:\s*(.+)$/im) || [])[1]?.trim() || ''
-      const toAddr = (header.match(/^To:\s*(.+)$/im) || [])[1]?.trim() || ''
-
-      // Decode RFC2047 encoded headers
-      function decodeRfc2047(str: string): string {
-        return str.replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (_match: string, _charset: string, encoding: string, text: string) => {
-          try {
-            if (encoding.toUpperCase() === 'B') return Buffer.from(text, 'base64').toString()
-            if (encoding.toUpperCase() === 'Q') {
-              return text.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (_m: string, hex: string) =>
-                String.fromCharCode(parseInt(hex, 16)))
-            }
-          } catch { /* ignore */ }
-          return text
-        }).replace(/\s+/g, ' ').trim()
-      }
-
-      items.push({
-        id: `${seqno}`,
-        subject: decodeRfc2047(subject),
-        from: decodeRfc2047(fromAddr),
-        to: decodeRfc2047(toAddr),
-        date: date,
-        preview: '',
-        starred: flags.includes('\\Flagged'),
-        read: flags.includes('\\Seen'),
+      const from = Math.max(1, total - MAIL_FETCH_LIMIT + 1)
+      const fetcher = imapClient.seq.fetch(`${from}:${total}`, {
+        bodies: 'HEADER',
+        struct: false,
       })
-    })
-  })
 
-  f.once('error', reject)
-  f.once('end', () => {
-    items.reverse() // newest first
-    resolve(items)
+      const items: MailItem[] = []
+      const parsing: Promise<void>[] = []
+      let settled = false
+
+      fetcher.on('message', (msg: any) => {
+        let header = ''
+        let uid = 0
+        let flags: string[] = []
+
+        msg.on('body', (stream: any) => {
+          stream.on('data', (chunk: Buffer) => { header += chunk.toString('utf-8') })
+        })
+
+        msg.once('attributes', (attrs: any) => {
+          uid = attrs.uid
+          flags = attrs.flags || []
+        })
+
+        msg.once('end', () => {
+          parsing.push(
+            parseHeaderMessage(header, flags, uid)
+              .then((item) => { if (item.id !== '0') items.push(item) })
+              .catch(() => { /* skip one malformed message */ }),
+          )
+        })
+      })
+
+      fetcher.once('error', (err: Error) => {
+        settled = true
+        reject(err)
+      })
+
+      fetcher.once('end', async () => {
+        if (settled) return
+        await Promise.all(parsing)
+        resolve(sortByDateDesc(items))
+      })
+    } catch (err: any) {
+      reject(err)
+    }
   })
 }
 
-export function setImapStarred(seqno: string, starred: boolean): Promise<{ ok: boolean }> {
+export function setImapStarred(uid: string, starred: boolean): Promise<{ ok: boolean }> {
   return new Promise((resolve) => {
     if (!imapClient) return resolve({ ok: false })
     const done = (err?: Error) => resolve({ ok: !err })
-    const seq = imapClient.seq as any
-    if (starred) seq.addFlags(seqno, '\\Flagged', done)
-    else seq.delFlags(seqno, '\\Flagged', done)
+    const client = imapClient as any
+    if (starred) client.addFlags(uid, '\\Flagged', done)
+    else client.delFlags(uid, '\\Flagged', done)
   })
 }
 
-export function deleteImapMail(seqno: string): Promise<{ ok: boolean }> {
+export function deleteImapMail(uid: string): Promise<{ ok: boolean }> {
   return new Promise((resolve) => {
     if (!imapClient) return resolve({ ok: false })
-    const seq = imapClient.seq as any
-    seq.addFlags(seqno, '\\Deleted', (err?: Error) => {
+    const client = imapClient as any
+    client.addFlags(uid, '\\Deleted', (err?: Error) => {
       if (err) return resolve({ ok: false })
-      ;(imapClient as any).expunge((expungeErr?: Error) => resolve({ ok: !expungeErr }))
+      client.expunge((expungeErr?: Error) => resolve({ ok: !expungeErr }))
     })
   })
 }
 
-// ── Fetch mail body ──
-
-export function fetchMailBody(seqno: string): Promise<{ body: string; attachments: { name: string; url: string }[] }> {
+export function fetchMailBody(uid: string): Promise<{ body: string; attachments: { name: string; url: string }[] }> {
   return new Promise((resolve, reject) => {
-    if (!imapClient) return reject(new Error('未连接邮箱'))
-    const f = imapClient.seq.fetch(seqno, { bodies: '' })
-    f.on('message', (msg: any) => {
+    if (!imapClient) return reject(new Error('邮箱未连接'))
+    const fetcher = (imapClient as any).fetch(uid, { bodies: '', markSeen: true })
+    let resolved = false
+
+    fetcher.on('message', (msg: any) => {
       msg.on('body', (stream: any) => {
         simpleParser(stream, (err, parsed) => {
+          if (resolved) return
           if (err) return reject(err)
+          resolved = true
           resolve({
-            body: parsed.html || parsed.text || '',
-            attachments: (parsed.attachments || []).map((a) => ({
-              name: a.filename || 'attachment',
+            body: parsed.html || parsed.textAsHtml || parsed.text || '',
+            attachments: (parsed.attachments || []).map((attachment) => ({
+              name: attachment.filename || 'attachment',
               url: '',
             })),
           })
         })
       })
     })
-    f.once('error', reject)
+
+    fetcher.once('error', reject)
+    fetcher.once('end', () => {
+      if (!resolved) reject(new Error('邮件正文为空'))
+    })
   })
 }
-
-// ── Send mail ──
 
 export async function sendMail(params: { to: string; subject: string; body: string }): Promise<{ ok: boolean; error?: string }> {
   if (!activeConfig) return { ok: false, error: '邮箱未配置' }
@@ -219,8 +314,6 @@ export async function sendMail(params: { to: string; subject: string; body: stri
   }
 }
 
-// ── Test connection ──
-
 export function testMailConnection(config: MailConfig): Promise<boolean> {
   return new Promise((resolve) => {
     const testClient = new Imap({
@@ -233,9 +326,19 @@ export function testMailConnection(config: MailConfig): Promise<boolean> {
       connTimeout: 10000,
       authTimeout: 10000,
     })
-    const timer = setTimeout(() => { testClient.end(); resolve(false) }, 12000)
-    testClient.once('ready', () => { clearTimeout(timer); testClient.end(); resolve(true) })
-    testClient.once('error', () => { clearTimeout(timer); resolve(false) })
+    const timer = setTimeout(() => {
+      try { testClient.end() } catch { /* ignore */ }
+      resolve(false)
+    }, 12000)
+    testClient.once('ready', () => {
+      clearTimeout(timer)
+      testClient.end()
+      resolve(true)
+    })
+    testClient.once('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
     testClient.connect()
   })
 }

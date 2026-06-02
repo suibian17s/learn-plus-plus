@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Empty, Form, Input, Modal, Spin, Tag, message } from 'antd'
+import { Alert, Button, Empty, Form, Input, Modal, Spin, Switch, Tag, message } from 'antd'
 import {
   DeleteOutlined,
   EditOutlined,
-  ExportOutlined,
   InboxOutlined,
   LoginOutlined,
   LogoutOutlined,
@@ -33,6 +32,26 @@ interface MailItem {
 interface MailDetailData extends MailItem {
   body: string
   attachments: { name: string; url: string }[]
+}
+
+interface MailLoginValues {
+  mailUsername: string
+  mailPassword?: string
+  mailImapHost?: string
+  mailImapPort?: number | string
+  mailImapTls?: boolean
+  mailSmtpHost?: string
+  mailSmtpPort?: number | string
+  mailSmtpTls?: boolean
+}
+
+const MAIL_DEFAULTS = {
+  imapHost: 'mails.tsinghua.edu.cn',
+  imapPort: 993,
+  imapTls: true,
+  smtpHost: 'mails.tsinghua.edu.cn',
+  smtpPort: 465,
+  smtpTls: true,
 }
 
 const FOLDER_LABELS: Record<string, string> = {
@@ -126,6 +145,8 @@ export default function MailboxPage() {
   const [composeMode, setComposeMode] = useState<'write' | 'reply' | 'forward'>('write')
   const [composeSending, setComposeSending] = useState(false)
   const [composeForm] = Form.useForm()
+  const [imapForm] = Form.useForm<MailLoginValues>()
+  const [imapConnecting, setImapConnecting] = useState(false)
 
   const folderLabel = FOLDER_LABELS[folder] || folder
 
@@ -147,6 +168,18 @@ export default function MailboxPage() {
     let cancelled = false
     ;(async () => {
       try {
+        const settings = await window.learn.settings.getAll()
+        if (!cancelled) {
+          imapForm.setFieldsValue({
+            mailUsername: settings.mailUsername || '',
+            mailImapHost: settings.mailImapHost || MAIL_DEFAULTS.imapHost,
+            mailImapPort: settings.mailImapPort || MAIL_DEFAULTS.imapPort,
+            mailImapTls: settings.mailImapTls !== false,
+            mailSmtpHost: settings.mailSmtpHost || settings.mailImapHost || MAIL_DEFAULTS.smtpHost,
+            mailSmtpPort: settings.mailSmtpPort || MAIL_DEFAULTS.smtpPort,
+            mailSmtpTls: settings.mailSmtpTls !== false,
+          })
+        }
         const status = await window.learn.mail.status()
         if (!cancelled) setMailLoggedIn(status.loggedIn)
       } catch {
@@ -154,7 +187,7 @@ export default function MailboxPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [imapForm])
 
   useEffect(() => {
     if (mailLoggedIn === true) {
@@ -216,7 +249,7 @@ export default function MailboxPage() {
           })
         }
       } catch {
-        if (!cancelled) message.warning('邮件正文暂时无法读取，可打开原站查看')
+        if (!cancelled) message.warning('邮件正文暂时无法读取，请重新同步或检查 IMAP 连接')
       } finally {
         if (!cancelled) setDetailLoading(false)
       }
@@ -247,19 +280,66 @@ export default function MailboxPage() {
   }
 
   async function handleLogin() {
-    setLoading(true)
+    setImapConnecting(true)
     try {
-      const result = await window.learn.mail.login()
+      const values = await imapForm.validateFields()
+      const config = {
+        imapHost: normalizeText(values.mailImapHost) || MAIL_DEFAULTS.imapHost,
+        imapPort: Number(values.mailImapPort || MAIL_DEFAULTS.imapPort),
+        imapTls: values.mailImapTls !== false,
+        smtpHost: normalizeText(values.mailSmtpHost) || normalizeText(values.mailImapHost) || MAIL_DEFAULTS.smtpHost,
+        smtpPort: Number(values.mailSmtpPort || MAIL_DEFAULTS.smtpPort),
+        smtpTls: values.mailSmtpTls !== false,
+        username: normalizeText(values.mailUsername),
+        password: values.mailPassword || '',
+      }
+
+      await window.learn.settings.set({
+        mailMode: 'imap',
+        mailUsername: config.username,
+        mailImapHost: config.imapHost,
+        mailImapPort: config.imapPort,
+        mailImapTls: config.imapTls,
+        mailSmtpHost: config.smtpHost,
+        mailSmtpPort: config.smtpPort,
+        mailSmtpTls: config.smtpTls,
+      })
+      if (values.mailPassword?.trim()) {
+        await window.learn.settings.setApiKey(values.mailPassword, 'mail')
+      }
+
+      const result = await window.learn.mail.loginImap(config)
       if (result.ok) {
         setMailLoggedIn(true)
-        message.success('邮箱登录成功')
+        message.success('IMAP 邮箱连接成功')
       } else {
-        setLoading(false)
-        message.error('邮箱登录超时，请重试')
+        message.error('IMAP 连接失败，请检查账号、密码或客户端专用密码')
       }
     } catch {
-      setLoading(false)
-      message.error('邮箱登录失败')
+      message.error('IMAP 登录失败')
+    }
+    setImapConnecting(false)
+  }
+
+  async function handleTestImap() {
+    try {
+      const values = await imapForm.validateFields()
+      message.loading({ key: 'mail-imap-test', content: '正在测试 IMAP 连接...' })
+      const ok = await window.learn.mail.testConnection({
+        imapHost: normalizeText(values.mailImapHost) || MAIL_DEFAULTS.imapHost,
+        imapPort: Number(values.mailImapPort || MAIL_DEFAULTS.imapPort),
+        imapTls: values.mailImapTls !== false,
+        smtpHost: normalizeText(values.mailSmtpHost) || normalizeText(values.mailImapHost) || MAIL_DEFAULTS.smtpHost,
+        smtpPort: Number(values.mailSmtpPort || MAIL_DEFAULTS.smtpPort),
+        smtpTls: values.mailSmtpTls !== false,
+        username: normalizeText(values.mailUsername),
+        password: values.mailPassword || '',
+      })
+      message.destroy('mail-imap-test')
+      if (ok) message.success('IMAP 连接测试成功')
+      else message.error('IMAP 连接测试失败')
+    } catch {
+      message.destroy('mail-imap-test')
     }
   }
 
@@ -370,7 +450,7 @@ export default function MailboxPage() {
         message.success('邮件已发送')
         closeCompose()
       } else {
-        message.error(result.error || '发送失败，请使用“打开原站”手动发送')
+        message.error(result.error || '发送失败，请检查 SMTP 配置')
       }
     } catch {
       // Ant Design handles form validation messages.
@@ -382,16 +462,64 @@ export default function MailboxPage() {
   if (mailLoggedIn === false) {
     return (
       <div className="lp2-mail-page lp2-mail-centered">
-        <section className="lp2-mail-login-card">
+        <section className="lp2-mail-login-card lp2-imap-login-card">
           <span className="lp2-mail-login-icon"><LoginOutlined /></span>
-          <h2>登录清华邮箱</h2>
-          <p>登录后 Learn++ 会在后台同步邮件列表，并按时间整理收件箱、草稿箱、已发送和已删除。</p>
+          <h2>使用 IMAP 登录邮箱</h2>
+          <p>网页登录抓取已关闭。请使用邮箱账号和客户端密码连接 IMAP/SMTP，Learn++ 会像常规邮箱客户端一样同步邮件。</p>
+          <Alert
+            type="info"
+            showIcon
+            message="默认使用 mails.tsinghua.edu.cn，IMAP 993 SSL，SMTP 465 SSL。"
+            className="lp2-imap-login-alert"
+          />
+          <Form
+            form={imapForm}
+            layout="vertical"
+            className="lp2-imap-login-form"
+            initialValues={{
+              mailImapHost: MAIL_DEFAULTS.imapHost,
+              mailImapPort: MAIL_DEFAULTS.imapPort,
+              mailImapTls: true,
+              mailSmtpHost: MAIL_DEFAULTS.smtpHost,
+              mailSmtpPort: MAIL_DEFAULTS.smtpPort,
+              mailSmtpTls: true,
+            }}
+          >
+            <div className="lp2-imap-form-grid">
+              <Form.Item name="mailUsername" label="邮箱账号" rules={[{ required: true, message: '请输入邮箱账号' }]}>
+                <Input placeholder="username@mails.tsinghua.edu.cn" />
+              </Form.Item>
+              <Form.Item name="mailPassword" label="密码 / 客户端专用密码">
+                <Input.Password placeholder="留空则使用已保存的密码" />
+              </Form.Item>
+              <Form.Item name="mailImapHost" label="IMAP 服务器" rules={[{ required: true, message: '请输入 IMAP 服务器' }]}>
+                <Input placeholder={MAIL_DEFAULTS.imapHost} />
+              </Form.Item>
+              <Form.Item name="mailImapPort" label="IMAP 端口">
+                <Input placeholder="993" />
+              </Form.Item>
+              <Form.Item name="mailSmtpHost" label="SMTP 服务器">
+                <Input placeholder={MAIL_DEFAULTS.smtpHost} />
+              </Form.Item>
+              <Form.Item name="mailSmtpPort" label="SMTP 端口">
+                <Input placeholder="465" />
+              </Form.Item>
+            </div>
+            <div className="lp2-imap-switches">
+              <Form.Item name="mailImapTls" valuePropName="checked">
+                <Switch checkedChildren="IMAP SSL" unCheckedChildren="IMAP 无加密" />
+              </Form.Item>
+              <Form.Item name="mailSmtpTls" valuePropName="checked">
+                <Switch checkedChildren="SMTP SSL" unCheckedChildren="SMTP STARTTLS" />
+              </Form.Item>
+            </div>
+          </Form>
           <div className="lp2-mail-login-actions">
-            <Button type="primary" size="large" icon={<LoginOutlined />} onClick={handleLogin}>
-              登录邮箱
+            <Button size="large" onClick={handleTestImap}>
+              测试连接
             </Button>
-            <Button size="large" icon={<ExportOutlined />} onClick={() => window.learn.mail.show()}>
-              打开原站
+            <Button type="primary" size="large" icon={<LoginOutlined />} loading={imapConnecting} onClick={handleLogin}>
+              登录邮箱
             </Button>
           </div>
         </section>
@@ -416,7 +544,7 @@ export default function MailboxPage() {
           <p>{error}</p>
           <div className="lp2-mail-empty-actions">
             <Button type="primary" icon={<ReloadOutlined />} onClick={loadMails}>重试</Button>
-            <Button icon={<ExportOutlined />} onClick={() => window.learn.mail.show()}>打开原站</Button>
+            <Button icon={<LoginOutlined />} onClick={() => setMailLoggedIn(false)}>重新配置 IMAP</Button>
           </div>
         </section>
       </div>
@@ -545,7 +673,7 @@ export default function MailboxPage() {
                     dangerouslySetInnerHTML={{ __html: detail.body }}
                   />
                 ) : (
-                  <p>{detailMail.preview || '正文暂时无法读取，可打开原站查看。'}</p>
+                  <p>{detailMail.preview || '正文暂时无法读取，请重新同步或检查 IMAP 连接。'}</p>
                 )}
 
                 {!!detail?.attachments?.length && (
