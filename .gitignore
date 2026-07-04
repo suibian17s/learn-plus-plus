@@ -8,3 +8,11 @@ Thumbs.db
 .worktrees/
 .superpowers/
 tmp/
+
+# 内部 / 开发者文档（非面向用户，不入仓库）
+HANDOVER.md
+unsolved.md
+CLAUDE.md
+glm_optimization_advice.md
+docs/superpowers/
+config/
