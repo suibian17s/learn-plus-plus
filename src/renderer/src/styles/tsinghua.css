@@ -1,3 +1,12 @@
+/*
+ * CSS MODIFICATION RULE:
+ * CSS modifications should only be appended at the end of this file
+ * as final overrides. Do not delete seemingly duplicate rules — they
+ * may be intentional override layers from previous iterations.
+ * Long-term plan: split into modules by window / layout / course /
+ * home / mailbox / tutor / login.
+ */
+
 /* ── Global non-linear animation variables ─────────────────────── */
 :root {
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -7357,12 +7366,59 @@ html.lp2-window-closing .login-v2-frame {
   gap: 8px !important;
 }
 
-.lp2-mail-attachments span {
-  padding: 7px 10px !important;
+.lp2-mail-attachments-header {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 4px !important;
+  font-size: 13px !important;
+  color: #888 !important;
+}
+
+.lp2-mail-attachment-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 7px 12px !important;
   border-radius: 12px !important;
   background: #F5F1FF !important;
   color: var(--lp2-primary) !important;
   font-size: 12px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: background 0.2s, box-shadow 0.2s !important;
+}
+
+.lp2-mail-attachment-item:hover {
+  background: #E8E0FA !important;
+  box-shadow: 0 1px 4px rgba(107, 70, 193, 0.18) !important;
+}
+
+.lp2-mail-attachment-item:active {
+  background: #D5CAF0 !important;
+}
+
+.lp2-mail-attachment-name {
+  max-width: 200px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.lp2-mail-attachments .anticon {
+  font-size: 13px !important;
+}
+
+/* Email iframe container */
+.lp2-mail-html-body {
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(232, 225, 245, 0.85) !important;
+}
+
+.lp2-mail-iframe {
+  display: block !important;
 }
 
 .lp2-mail-detail-actions {
@@ -7916,4 +7972,1400 @@ html.lp2-window-closing .login-v2-frame {
   .lp2-imap-form-grid {
     grid-template-columns: minmax(0, 1fr) !important;
   }
+}
+
+/* ===================================================================
+   2026-07 visual cleanup — final overrides (M1-M13 + global audit)
+   邮件页信息降噪、比例重排、正文占满视口；规则只追加不删除历史层。
+   =================================================================== */
+
+/* M3/M4/M5: 表头与装饰列已从 JSX 移除，行网格改为 4 列并压缩行高 */
+.lp2-mail-table-row {
+  grid-template-columns: 44px minmax(140px, 0.7fr) 2.2fr 92px !important;
+  min-height: 56px !important;
+  padding: 8px 12px !important;
+}
+
+/* M5: 星标默认隐藏，行 hover / 键盘聚焦 / 已星标时显现 */
+.lp2-mail-row-state {
+  gap: 8px !important;
+}
+
+.lp2-mail-row-state button {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.lp2-mail-table-row:hover .lp2-mail-row-state button,
+.lp2-mail-table-row:focus-within .lp2-mail-row-state button,
+.lp2-mail-row-state button.is-starred {
+  opacity: 1;
+}
+
+/* M7: 列表头精简后的间距 */
+.lp2-mail-list-summary {
+  padding: 2px 6px 14px !important;
+}
+
+/* M10: 正文区 flex 占满剩余高度，滚动只发生在正文内部 */
+.lp2-mail-detail-view {
+  overflow: hidden !important;
+}
+
+.lp2-mail-read-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.lp2-mail-read-body .lp2-mail-html-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+.lp2-mail-body-loading {
+  flex: 1 1 auto !important;
+  display: grid !important;
+  place-items: center !important;
+}
+
+/* M11: 读信头压缩 —— 单行元信息取代三行 dl */
+.lp2-mail-read-header {
+  flex: 0 0 auto !important;
+  padding-bottom: 14px !important;
+}
+
+.lp2-mail-read-header h1 {
+  margin: 0 0 6px !important;
+  font-size: 20px !important;
+  line-height: 1.35 !important;
+}
+
+.lp2-mail-meta-line {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  color: var(--lp2-muted) !important;
+  font-size: 13px !important;
+}
+
+.lp2-mail-meta-line strong {
+  color: var(--lp2-text) !important;
+  font-weight: 620 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.lp2-mail-meta-line.secondary {
+  margin-top: 2px !important;
+  font-size: 12px !important;
+  color: var(--lp2-tertiary) !important;
+}
+
+.lp2-mail-meta-sep {
+  color: var(--lp2-tertiary) !important;
+}
+
+/* M9: 详情工具栏右侧按钮组间距 */
+.lp2-mail-read-toolbar > div {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+/* M12: 附件 chip */
+.lp2-mail-attachments {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  padding-top: 12px !important;
+  border-top: 1px solid rgba(224, 216, 238, 0.62) !important;
+  margin-top: 12px !important;
+}
+
+.lp2-mail-attachment-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  max-width: 320px !important;
+  padding: 6px 12px !important;
+  border: 1px solid rgba(216, 207, 232, 0.9) !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: var(--lp2-text) !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  transition: border-color 0.15s ease, color 0.15s ease !important;
+}
+
+.lp2-mail-attachment-chip span {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.lp2-mail-attachment-chip:hover {
+  border-color: var(--lp2-primary) !important;
+  color: var(--lp2-primary) !important;
+}
+
+/* M13: 读信态顶栏改为两端布局（覆盖 5 列网格） */
+.lp2-mail-context-head-reading {
+  grid-template-columns: 1fr max-content !important;
+}
+
+/* ===================================================================
+   2026-07 visual cleanup pass 2 — 邮件显示修复 / Tutor 去卡片 / 写信页面化
+   =================================================================== */
+
+/* 收件人行：默认单行截断，点击展开 */
+.lp2-mail-meta-line.secondary {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+}
+
+.lp2-mail-meta-line.secondary.expanded {
+  white-space: normal !important;
+  word-break: break-all !important;
+}
+
+/* 详情/写信视图进入动画 */
+@keyframes lp2-page-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+.lp2-mail-detail-view {
+  animation: lp2-page-in 0.24s ease;
+}
+
+/* 写邮件页面（取代弹窗） */
+.lp2-mail-compose-view {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  animation: lp2-page-in 0.26s ease;
+}
+
+.lp2-mail-compose-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  width: 100% !important;
+  max-width: 760px !important;
+  margin: 0 auto !important;
+  padding: 10px 4px 28px !important;
+}
+
+.lp2-mail-compose-body h1 {
+  margin: 4px 0 18px !important;
+  font-size: 20px !important;
+  color: var(--lp2-text) !important;
+}
+
+.lp2-mail-compose-body .ant-input,
+.lp2-mail-compose-body textarea.ant-input {
+  border-radius: 12px !important;
+}
+
+/* Tutor：去掉聊天卡片外壳，改为居中排版 */
+.lp2-tutor-chat-layout {
+  display: flex !important;
+  grid-template-columns: none !important;
+}
+
+.lp2-ai-chat-panel {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  max-width: 960px !important;
+  margin: 0 auto !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 8px 4px 16px !important;
+}
+
+/* Tutor 输入栏：新对话 | 输入框 | 发送 三列，底部对齐 */
+.lp2-ai-input-bar {
+  grid-template-columns: 48px minmax(0, 1fr) max-content !important;
+  align-items: end !important;
+}
+
+/* TextArea 自适应高度：解除历史规则的 48px 固定高度 */
+.lp2-ai-input-bar textarea.ant-input {
+  height: auto !important;
+  min-height: 48px !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+  border-radius: 16px !important;
+  border-color: #E8E1F5 !important;
+  box-shadow: none !important;
+  resize: none !important;
+}
+
+.lp2-ai-input-bar .ant-btn {
+  padding-inline: 18px !important;
+}
+
+.lp2-ai-clear-button {
+  width: 48px !important;
+  padding-inline: 0 !important;
+  color: var(--lp2-tertiary) !important;
+  border-color: #E8E1F5 !important;
+}
+
+.lp2-ai-clear-button:hover {
+  color: var(--lp2-primary) !important;
+  border-color: var(--lp2-primary) !important;
+}
+
+/* ===================================================================
+   2026-07 visual cleanup pass 3 — 邮箱无界设计（去线条化）+ 登录页聚焦
+   原则：结构分组靠间距与圆角悬停底色，不靠分隔线；表单控件用柔和填充
+   =================================================================== */
+
+/* ── 登录页：聚焦账号密码，窄列居中 ── */
+.lp2-imap-login-card {
+  max-width: 400px !important;
+  width: 100% !important;
+  padding: 12px 8px !important;
+}
+
+.lp2-mail-login-sub {
+  margin: 6px 0 22px !important;
+  color: var(--lp2-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.lp2-imap-login-form .ant-form-item {
+  margin-bottom: 14px !important;
+}
+
+.lp2-imap-login-form .ant-form-item-extra {
+  padding-top: 6px !important;
+  font-size: 12px !important;
+  color: var(--lp2-tertiary) !important;
+}
+
+.lp2-mail-login-submit {
+  height: 46px !important;
+  border-radius: 14px !important;
+  margin-top: 2px !important;
+}
+
+.lp2-imap-advanced {
+  margin-top: 10px !important;
+}
+
+.lp2-imap-advanced .ant-collapse-header {
+  padding: 10px 0 !important;
+  color: var(--lp2-tertiary) !important;
+  font-size: 12.5px !important;
+}
+
+.lp2-imap-advanced .ant-collapse-content-box {
+  padding: 4px 0 8px !important;
+}
+
+.lp2-imap-advanced .lp2-imap-form-grid {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) !important;
+  gap: 0 12px !important;
+}
+
+.lp2-imap-switches {
+  display: flex !important;
+  gap: 16px !important;
+  margin-bottom: 6px !important;
+}
+
+/* ── 无界表单控件：柔和填充替代边框 ── */
+.lp2-imap-login-form .ant-input,
+.lp2-imap-login-form .ant-input-affix-wrapper,
+.lp2-mail-compose-body .ant-input,
+.lp2-mail-compose-body textarea.ant-input {
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.lp2-imap-login-form .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
+.lp2-imap-login-form .ant-input:focus,
+.lp2-imap-login-form .ant-input-affix-wrapper-focused,
+.lp2-mail-compose-body .ant-input:focus,
+.lp2-mail-compose-body textarea.ant-input:focus {
+  background: #FFFFFF !important;
+  border-color: var(--lp2-primary) !important;
+}
+
+/* ── 邮件列表：去掉全部分隔线，行改为圆角悬浮块 ── */
+.lp2-mail-list-summary {
+  border-bottom: 0 !important;
+  padding-bottom: 10px !important;
+}
+
+.lp2-mail-table-row {
+  border-bottom: 0 !important;
+  border-radius: 14px !important;
+  margin: 1px 0 !important;
+}
+
+.lp2-mail-table-row.unread {
+  background: rgba(107, 70, 193, 0.03) !important;
+}
+
+.lp2-mail-table-row:hover,
+.lp2-mail-table-row:focus-visible {
+  background: rgba(107, 70, 193, 0.07) !important;
+}
+
+/* ── 读信区：去线，正文列居中，比例收窄提升可读性 ── */
+.lp2-mail-read-toolbar {
+  border-bottom: 0 !important;
+  padding: 0 0 12px !important;
+}
+
+.lp2-mail-read-header {
+  border-bottom: 0 !important;
+  padding: 12px 4px 14px !important;
+  width: 100% !important;
+  max-width: 880px !important;
+  margin-inline: auto !important;
+}
+
+.lp2-mail-read-body {
+  width: 100% !important;
+  max-width: 880px !important;
+  margin-inline: auto !important;
+  padding: 4px 4px 24px !important;
+}
+
+.lp2-mail-attachments {
+  border-top: 0 !important;
+  padding-top: 8px !important;
+  margin-top: 8px !important;
+}
+
+.lp2-mail-attachment-chip {
+  border: 0 !important;
+  background: #F6F3FB !important;
+}
+
+.lp2-mail-attachment-chip:hover {
+  background: #EDE7F9 !important;
+  color: var(--lp2-primary) !important;
+}
+
+/* ── 邮箱顶栏：搜索/筛选/排序无界化 ── */
+.lp2-mail-context-head .ant-input-affix-wrapper {
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.lp2-mail-context-head .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
+.lp2-mail-context-head .ant-input-affix-wrapper-focused {
+  background: #FFFFFF !important;
+  border-color: var(--lp2-primary) !important;
+}
+
+.lp2-mail-filter-tabs {
+  border: 0 !important;
+  background: rgba(107, 70, 193, 0.06) !important;
+}
+
+.lp2-mail-context-head .ant-select .ant-select-selector {
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+  border-radius: 15px !important;
+  box-shadow: none !important;
+}
+
+.lp2-mail-context-head .ant-btn:not(.lp2-mail-compose-button) {
+  border-color: transparent !important;
+  background: #F6F3FB !important;
+}
+
+.lp2-mail-context-head .ant-btn:not(.lp2-mail-compose-button):hover {
+  background: #EDE7F9 !important;
+  color: var(--lp2-primary) !important;
+}
+
+/* 详情/写信工具栏按钮同样无界化（主按钮与绿色按钮除外） */
+.lp2-mail-read-toolbar .ant-btn:not(.ant-btn-primary):not(.lp2-green-button) {
+  border-color: transparent !important;
+  background: #F6F3FB !important;
+}
+
+.lp2-mail-read-toolbar .ant-btn:not(.ant-btn-primary):not(.lp2-green-button):hover {
+  background: #EDE7F9 !important;
+  color: var(--lp2-primary) !important;
+}
+
+/* ===================================================================
+   2026-07 visual cleanup pass 4 — 甘蔗 Tutor 无界化 + 融入组件
+   =================================================================== */
+
+/* 消息气泡去边框 */
+.lp2-ai-message.tutor > div,
+.lp2-ai-message.user > div {
+  border: 0 !important;
+}
+
+/* 快捷 chips 无界填充（高风险入口保持暖黄） */
+.lp2-ai-quick-row button {
+  border: 0 !important;
+  background: rgba(107, 70, 193, 0.07) !important;
+  color: var(--lp2-primary) !important;
+  transition: background 0.15s ease !important;
+}
+
+.lp2-ai-quick-row button:hover {
+  background: rgba(107, 70, 193, 0.13) !important;
+}
+
+.lp2-ai-quick-row button.warning {
+  background: #FFF8E1 !important;
+  color: #8A6D1D !important;
+}
+
+.lp2-ai-quick-row button.warning:hover {
+  background: #FFF3C4 !important;
+}
+
+/* 会话工具行 */
+.lp2-tutor-session-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 4px 10px;
+}
+
+.lp2-tutor-session-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(107, 70, 193, 0.06);
+  color: var(--lp2-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lp2-tutor-session-button:hover {
+  background: rgba(107, 70, 193, 0.12);
+  color: var(--lp2-primary);
+}
+
+.lp2-tutor-session-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp2-tutor-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 200px;
+}
+
+.lp2-tutor-history-item .anticon-delete {
+  color: var(--lp2-tertiary);
+}
+
+.lp2-tutor-history-item .anticon-delete:hover {
+  color: #CF1322;
+}
+
+/* 空状态：居中引导 */
+.lp2-tutor-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px 12px 40px;
+  text-align: center;
+}
+
+.lp2-tutor-empty img {
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+  object-fit: cover;
+  object-position: center top;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.lp2-tutor-empty h2 {
+  margin: 10px 0 0;
+  font-size: 22px;
+  color: var(--lp2-text);
+}
+
+.lp2-tutor-empty > p {
+  margin: 2px 0 22px;
+  max-width: 460px;
+  color: var(--lp2-muted);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.lp2-tutor-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 260px));
+  gap: 12px;
+}
+
+.lp2-tutor-guide-grid button {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(107, 70, 193, 0.055);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.lp2-tutor-guide-grid button:hover {
+  background: rgba(107, 70, 193, 0.11);
+  transform: translateY(-1px);
+}
+
+.lp2-tutor-guide-grid strong {
+  color: var(--lp2-text);
+  font-size: 14px;
+}
+
+.lp2-tutor-guide-grid small {
+  color: var(--lp2-muted);
+  font-size: 12px;
+}
+
+.lp2-tutor-guide-grid .anticon {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--lp2-tertiary);
+  font-size: 12px;
+}
+
+/* 工具调用状态线 */
+.lp2-tutor-tool-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 56px;
+  color: var(--lp2-green-dark, #4F8A10);
+  font-size: 12.5px;
+}
+
+.lp2-tutor-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7CB342;
+  animation: lp2-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes lp2-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* navigate_to 跳转卡片 */
+.lp2-tutor-nav-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 56px;
+  max-width: min(520px, 78%);
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: #F1F8E9;
+  color: var(--lp2-green-dark, #4F8A10);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.lp2-tutor-nav-card:hover {
+  background: #E4F2D5;
+}
+
+.lp2-tutor-nav-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(124, 179, 66, 0.18);
+  font-size: 12px;
+}
+
+.lp2-tutor-nav-label {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp2-tutor-nav-go {
+  margin-left: auto;
+  font-size: 12.5px;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* 上下文 chip */
+.lp2-tutor-context-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(124, 179, 66, 0.10);
+  color: var(--lp2-green-dark, #4F8A10);
+  font-size: 12.5px;
+}
+
+.lp2-tutor-context-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp2-tutor-context-chip button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.lp2-tutor-context-chip button:hover {
+  opacity: 1;
+}
+
+/* 固定声明行 */
+.lp2-tutor-disclaimer {
+  flex: 0 0 auto;
+  margin: 8px 0 0;
+  text-align: center;
+  color: var(--lp2-tertiary);
+  font-size: 11.5px;
+}
+
+/* 课程顶栏"问甘蔗"槽位 */
+.lp2-ask-tutor-slot {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+}
+
+.lp2-ask-tutor-button {
+  border-radius: 13px !important;
+}
+
+/* ===== 2026-07 pass 5：Tutor 修补 ===== */
+
+/* 输入栏简化为 输入框+发送 两列 */
+.lp2-ai-input-bar-simple {
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+}
+
+/* 课程顶栏"问甘蔗"槽位（不再复用 lp2-context-stats，避免子 span 被历史规则渲染成统计卡） */
+.lp2-ask-tutor-slot {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  padding-top: 6px !important;
+}
+
+.lp2-ask-tutor-slot .ant-btn span {
+  min-width: 0 !important;
+  height: auto !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+/* ===================================================================
+   2026-07 visual cleanup pass 6 — 作业页无界化 + 全局非线性动画系统
+   =================================================================== */
+
+/* ── 全局缓动令牌 ── */
+:root {
+  --lp2-ease-out: cubic-bezier(0.22, 1, 0.36, 1);      /* 快出缓停 */
+  --lp2-ease-spring: cubic-bezier(0.34, 1.45, 0.64, 1); /* 轻微回弹 */
+}
+
+/* ── 路由页面进入：淡入 + 上浮（元素挂载时触发一次） ── */
+@keyframes lp2-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.lp2-content > * {
+  animation: lp2-enter 0.3s var(--lp2-ease-out) both;
+}
+
+/* ── 列表行级联进场（前 8 行错峰 25ms） ── */
+.lp2-mail-table-row,
+.lp2-file-row,
+.lp2-hw-row,
+.lp2-task-row,
+.lp2-course-progress-row,
+.lp2-update-row {
+  animation: lp2-enter 0.32s var(--lp2-ease-out) backwards;
+}
+
+.lp2-mail-table-row:nth-child(1), .lp2-file-row:nth-child(1), .lp2-hw-row:nth-child(2) { animation-delay: 0.02s; }
+.lp2-mail-table-row:nth-child(2), .lp2-file-row:nth-child(2), .lp2-hw-row:nth-child(3) { animation-delay: 0.05s; }
+.lp2-mail-table-row:nth-child(3), .lp2-file-row:nth-child(3), .lp2-hw-row:nth-child(4) { animation-delay: 0.08s; }
+.lp2-mail-table-row:nth-child(4), .lp2-file-row:nth-child(4), .lp2-hw-row:nth-child(5) { animation-delay: 0.11s; }
+.lp2-mail-table-row:nth-child(5), .lp2-file-row:nth-child(5), .lp2-hw-row:nth-child(6) { animation-delay: 0.14s; }
+.lp2-mail-table-row:nth-child(6), .lp2-file-row:nth-child(6), .lp2-hw-row:nth-child(7) { animation-delay: 0.17s; }
+.lp2-mail-table-row:nth-child(7), .lp2-file-row:nth-child(7), .lp2-hw-row:nth-child(8) { animation-delay: 0.20s; }
+.lp2-mail-table-row:nth-child(8), .lp2-file-row:nth-child(8), .lp2-hw-row:nth-child(9) { animation-delay: 0.23s; }
+
+/* ── 交互微动效：按压回缩 + 悬停位移，统一弹性曲线 ── */
+.ant-btn,
+.lp2-nav-item,
+.lp2-course-item,
+.lp2-course-tab,
+.lp2-ai-quick-row button,
+.lp2-tutor-guide-grid button,
+.lp2-mail-attachment-chip,
+.lp2-file-action-button,
+.lp2-mail-filter-tabs button,
+.lp2-tutor-nav-card,
+.lp2-hw-row {
+  transition:
+    transform 0.18s var(--lp2-ease-spring),
+    background 0.18s var(--lp2-ease-out),
+    color 0.18s var(--lp2-ease-out),
+    border-color 0.18s var(--lp2-ease-out),
+    box-shadow 0.25s var(--lp2-ease-out) !important;
+}
+
+.ant-btn:not(:disabled):active,
+.lp2-ai-quick-row button:active,
+.lp2-tutor-guide-grid button:active,
+.lp2-mail-filter-tabs button:active,
+.lp2-mail-attachment-chip:active,
+.lp2-tutor-nav-card:active,
+.lp2-file-action-button:active {
+  transform: scale(0.96) !important;
+}
+
+.lp2-nav-item:hover,
+.lp2-course-item:hover {
+  transform: translateX(2px);
+}
+
+.lp2-mail-table-row:active,
+.lp2-hw-row:active,
+.lp2-file-row:active,
+.lp2-course-item:active,
+.lp2-nav-item:active {
+  transform: scale(0.995) !important;
+}
+
+/* 尊重系统"减少动态效果"偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .lp2-content > *,
+  .lp2-mail-table-row, .lp2-file-row, .lp2-hw-row,
+  .lp2-task-row, .lp2-course-progress-row, .lp2-update-row,
+  .lp2-mail-detail-view, .lp2-mail-compose-view {
+    animation: none !important;
+  }
+}
+
+/* ── 作业页：无界行 ── */
+.lp2-hw-section {
+  margin-bottom: 26px;
+}
+
+.lp2-hw-section-title {
+  margin: 0 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lp2-muted);
+  letter-spacing: 0.02em;
+}
+
+.lp2-hw-section-title.muted {
+  color: var(--lp2-tertiary);
+}
+
+.lp2-hw-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lp2-hw-row:hover {
+  background: rgba(107, 70, 193, 0.06);
+}
+
+.lp2-hw-row.done .lp2-hw-main strong {
+  font-weight: 550;
+}
+
+.lp2-hw-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  justify-self: center;
+}
+
+.lp2-hw-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lp2-hw-main strong {
+  color: var(--lp2-text);
+  font-size: 14.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp2-hw-main small {
+  color: var(--lp2-muted);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp2-hw-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lp2-hw-grade {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+}
+
+.lp2-hw-grade strong {
+  color: var(--lp2-primary);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.lp2-hw-grade small {
+  color: var(--lp2-tertiary);
+  font-size: 11.5px;
+}
+
+.lp2-hw-state {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.lp2-hw-state.submitted {
+  background: rgba(82, 196, 26, 0.12);
+  color: #4F8A10;
+}
+
+.lp2-hw-state.expired {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--lp2-tertiary);
+}
+
+/* ── 课程内工具栏无界化（作业/公告/讨论页共用） ── */
+.lp2-course-local-toolbar .ant-input-affix-wrapper {
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.lp2-course-local-toolbar .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
+.lp2-course-local-toolbar .ant-input-affix-wrapper-focused {
+  background: #FFFFFF !important;
+  border-color: var(--lp2-primary) !important;
+}
+
+.lp2-course-local-toolbar .ant-btn:not(.lp2-green-button):not(.ant-btn-primary) {
+  border-color: transparent !important;
+  background: #F6F3FB !important;
+}
+
+.lp2-course-local-toolbar .ant-btn:not(.lp2-green-button):not(.ant-btn-primary):hover {
+  background: #EDE7F9 !important;
+  color: var(--lp2-primary) !important;
+}
+
+/* 课件页工具栏同样式 */
+.lp2-file-toolbar .ant-input-affix-wrapper {
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.lp2-file-toolbar .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
+.lp2-file-toolbar .ant-input-affix-wrapper-focused {
+  background: #FFFFFF !important;
+  border-color: var(--lp2-primary) !important;
+}
+
+.lp2-file-toolbar .ant-select .ant-select-selector {
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.lp2-file-toolbar .ant-btn:not(.lp2-green-button):not(.ant-btn-primary) {
+  border-color: transparent !important;
+  background: #F6F3FB !important;
+}
+
+.lp2-file-toolbar .ant-btn:not(.lp2-green-button):not(.ant-btn-primary):hover {
+  background: #EDE7F9 !important;
+  color: var(--lp2-primary) !important;
+}
+
+/* ===================================================================
+   2026-07 visual cleanup pass 7 — 总结抽屉 / Markdown 表格 / 一键作业 / 动画节流
+   =================================================================== */
+
+/* ── 动画节流：连续导航 10s 内不重播进场动画（由 AppShell 切换 body 类） ── */
+body.lp2-anim-quiet .lp2-content > *,
+body.lp2-anim-quiet .lp2-mail-table-row,
+body.lp2-anim-quiet .lp2-file-row,
+body.lp2-anim-quiet .lp2-hw-row,
+body.lp2-anim-quiet .lp2-task-row,
+body.lp2-anim-quiet .lp2-course-progress-row,
+body.lp2-anim-quiet .lp2-update-row,
+body.lp2-anim-quiet .lp2-mail-detail-view,
+body.lp2-anim-quiet .lp2-mail-compose-view {
+  animation: none !important;
+}
+
+/* ── 甘蔗 Tutor 总结抽屉 ── */
+.lp2-tutor-drawer .ant-drawer-header {
+  border-bottom: 0 !important;
+  padding: 18px 22px 10px !important;
+}
+
+.lp2-tutor-drawer .ant-drawer-body {
+  padding: 8px 22px 24px !important;
+}
+
+.lp2-tutor-drawer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  color: var(--lp2-green-dark, #4F8A10);
+  font-weight: 700;
+}
+
+.lp2-tutor-drawer-title span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp2-tutor-drawer-loading {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 64px 0;
+  color: var(--lp2-muted);
+}
+
+.lp2-tutor-drawer-note {
+  margin: 18px 0 0;
+  color: var(--lp2-tertiary);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+/* ── Markdown 表格与分割线（Tutor 气泡 / 抽屉 / 预览通用） ── */
+.lp2-md-table-wrap {
+  margin: 10px 0;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.lp2-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.lp2-md-table th,
+.lp2-md-table td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(224, 216, 238, 0.55);
+}
+
+.lp2-md-table th {
+  background: rgba(107, 70, 193, 0.06);
+  color: var(--lp2-text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lp2-md-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.lp2-md-hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid rgba(224, 216, 238, 0.8);
+}
+
+/* ── 一键完成作业：无界卡片 ── */
+.lp2-hwauto-head {
+  margin: 4px 4px 16px;
+}
+
+.lp2-hwauto-head h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--lp2-text);
+}
+
+.lp2-hwauto-head p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--lp2-tertiary);
+}
+
+.lp2-hwauto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+.lp2-hwauto-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(107, 70, 193, 0.045);
+  transition: background 0.18s var(--lp2-ease-out), transform 0.18s var(--lp2-ease-spring);
+}
+
+.lp2-hwauto-card:hover {
+  background: rgba(107, 70, 193, 0.08);
+}
+
+.lp2-hwauto-card.manual {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.lp2-hwauto-title {
+  color: var(--lp2-text);
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.lp2-hwauto-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lp2-hwauto-meta .ant-tag {
+  margin-inline-end: 0 !important;
+  border: 0 !important;
+}
+
+.lp2-hwauto-deadline {
+  color: var(--lp2-muted);
+  font-size: 12.5px;
+}
+
+.lp2-hwauto-deadline.urgent {
+  color: #D97706;
+  font-weight: 650;
+}
+
+.lp2-hwauto-manual-note {
+  margin: 0;
+  color: var(--lp2-tertiary);
+  font-size: 12px;
+}
+
+.lp2-hwauto-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lp2-hwauto-actions .ant-btn-primary {
+  flex: 1;
+  border-radius: 12px !important;
+}
+
+/* ===================================================================
+   2026-07 visual cleanup pass 8 — 作业页/上下文配色/KaTeX/课件追问
+   =================================================================== */
+
+/* 作业行：已完成去掉空圆点列，改两列 */
+.lp2-hw-row.done {
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+}
+
+/* 分数配色：紫色改甘蔗绿（成绩正面反馈），字号收敛 */
+.lp2-hw-grade strong {
+  color: #4F8A10 !important;
+  font-size: 15px !important;
+  font-weight: 750 !important;
+}
+.lp2-hw-grade small {
+  color: var(--lp2-tertiary) !important;
+}
+
+/* 上下文 chip：去绿改低调浅紫灰，与紫色体系一致 */
+.lp2-tutor-context-chip {
+  background: rgba(107, 70, 193, 0.055) !important;
+  color: var(--lp2-muted) !important;
+}
+.lp2-tutor-context-chip span { color: var(--lp2-muted) !important; }
+
+/* 用户消息气泡：字重收敛，配色柔和 */
+.lp2-ai-message.user > div {
+  font-weight: 600 !important;
+  background: #F4EEFF !important;
+}
+
+/* 跳转卡片：绿色收敛为更淡的中性绿 */
+.lp2-tutor-nav-card {
+  background: #F3F7EE !important;
+}
+.lp2-tutor-nav-card:hover {
+  background: #E9F1DF !important;
+}
+
+/* KaTeX 公式 */
+.lp2-md-math-block {
+  margin: 12px 0;
+  padding: 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.lp2-md-math-inline .katex { font-size: 1.02em; }
+.lp2-markdown .katex { line-height: 1.4; }
+.lp2-md-math-block::-webkit-scrollbar { height: 6px; }
+.lp2-md-math-block::-webkit-scrollbar-thumb { background: #E4DCF4; border-radius: 6px; }
+
+/* 总结抽屉：上下总结区可滚动 + 底部追问输入 */
+.lp2-tutor-drawer .ant-drawer-body {
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 8px 22px 16px !important;
+}
+.lp2-tutor-drawer-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.lp2-tutor-drawer-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.lp2-tutor-drawer-scroll::-webkit-scrollbar { width: 6px; }
+.lp2-tutor-drawer-scroll::-webkit-scrollbar-thumb { background: #E4DCF4; border-radius: 6px; }
+
+/* 抽屉内追问对话 */
+.lp2-tutor-drawer-chat {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(224, 216, 238, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lp2-tutor-drawer-msg {
+  max-width: 90%;
+  padding: 8px 13px;
+  border-radius: 13px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.lp2-tutor-drawer-msg.user {
+  align-self: flex-end;
+  background: #F4EEFF;
+  color: var(--lp2-primary-dark);
+}
+.lp2-tutor-drawer-msg.assistant {
+  align-self: flex-start;
+  background: #F6FBF2;
+  color: #365C24;
+}
+.lp2-tutor-drawer-msg .lp2-markdown { font-size: 13.5px; }
+.lp2-tutor-drawer-typing { color: var(--lp2-green-dark, #4F8A10); }
+
+.lp2-tutor-drawer-input {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+}
+.lp2-tutor-drawer-input .ant-input {
+  border-radius: 12px !important;
+  background: #F6F3FB !important;
+  border-color: transparent !important;
+}
+.lp2-tutor-drawer-input .ant-input:focus {
+  background: #fff !important;
+  border-color: var(--lp2-primary) !important;
+}
+.lp2-tutor-drawer-input .ant-btn {
+  height: auto !important;
+  align-self: stretch !important;
+  border-radius: 12px !important;
+}
+
+/* ===================================================================
+   pass — 甘蔗 Tutor 多模态（图片输入）补完
+   =================================================================== */
+.lp2-ai-input-bar.lp2-ai-input-bar-simple {
+  display: flex !important;
+  align-items: flex-end !important;
+  gap: 8px !important;
+  grid-template-columns: none !important;
+}
+.lp2-ai-input-bar-simple .ant-input,
+.lp2-ai-input-bar-simple textarea.ant-input {
+  flex: 1 1 auto !important;
+}
+.lp2-ai-input-bar-simple .lp2-ai-image-button,
+.lp2-ai-input-bar-simple > .ant-btn {
+  flex: 0 0 auto !important;
+}
+.lp2-ai-image-button {
+  color: #7c5ce6 !important;
+  border-color: #e8e1f5 !important;
+  background: #f6f3fb !important;
+}
+.lp2-ai-image-button:hover:not(:disabled) {
+  color: #6b46c1 !important;
+  border-color: #6b46c1 !important;
+}
+.lp2-tutor-pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 4px 8px;
+}
+.lp2-tutor-pending-thumb {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.lp2-tutor-pending-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  -webkit-user-drag: none;
+}
+.lp2-tutor-pending-thumb button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lp2-tutor-pending-thumb button:hover { background: rgba(0, 0, 0, 0.75); }
+.lp2-tutor-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.lp2-tutor-msg-images img {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 12px;
+  object-fit: contain;
+  -webkit-user-drag: none;
 }

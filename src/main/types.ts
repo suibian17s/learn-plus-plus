@@ -168,6 +168,7 @@ export interface StatsSnapshot {
   streakDays: number
   completedCourses: number
   totalCourses: number
+  coursesWithHomework: number
   weeklyMinutes: number
   todayFocus: TodayFocusItem[]
   courseProgress: CourseProgressItem[]
@@ -181,8 +182,17 @@ export interface TodayFocusItem {
   title: string
   tag: string
   deadline?: string
-  targetTab: 'homework' | 'notifications' | 'discussion' | 'files'
+  targetTab: 'homework' | 'notifications' | 'discussion' | 'files' | 'mailbox'
   targetId?: string
+}
+
+export interface ManualFocusItem {
+  id: string
+  type: 'email' | 'custom'
+  title: string
+  description: string
+  createdAt: string
+  mailId?: string
 }
 
 export interface CourseProgressItem {

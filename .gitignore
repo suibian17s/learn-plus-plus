@@ -7,3 +7,4 @@ Thumbs.db
 *.enc
 .worktrees/
 .superpowers/
+tmp/

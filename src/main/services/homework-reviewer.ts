@@ -7,6 +7,7 @@ export interface ReviewInput {
   assembledContent: string
   coursewareUsed: string
   styleGuide: string
+  signal?: AbortSignal
 }
 
 export interface ReviewOutput {
@@ -50,7 +51,7 @@ ${input.assembledContent.slice(0, 15000)}
   const messages: AiMessage[] = [{ role: 'user', content: prompt }]
 
   try {
-    const raw = await complete({ system, messages, maxTokens: 4096 })
+    const raw = await complete({ system, messages, maxTokens: 4096, signal: input.signal })
     const trimmed = raw.trim()
     // Strip markdown code fences if present
     const json = JSON.parse(trimmed.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, ''))

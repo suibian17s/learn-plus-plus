@@ -20,6 +20,9 @@ import QuestionnairePage from './pages/Questionnaire'
 import SettingsPage from './pages/Settings'
 import DownloadsPage from './pages/Downloads'
 import AboutPage from './pages/About'
+import AllTasksPage from './pages/AllTasks'
+import AllCoursesPage from './pages/AllCourses'
+import AllUpdatesPage from './pages/AllUpdates'
 
 export default function App() {
   const { loggedIn, loading, setLoggedIn, setLoading } = useAuthStore()
@@ -82,6 +85,9 @@ export default function App() {
           <Route path="settings" element={<SettingsPage />} />
           <Route path="downloads" element={<DownloadsPage />} />
           <Route path="about" element={<AboutPage />} />
+          <Route path="all-tasks" element={<AllTasksPage />} />
+          <Route path="all-courses" element={<AllCoursesPage />} />
+          <Route path="all-updates" element={<AllUpdatesPage />} />
         </Route>
       </Routes>
     </HashRouter>

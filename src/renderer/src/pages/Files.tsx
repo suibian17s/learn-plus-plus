@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Input, message, Modal, Select, Spin, Tag } from 'antd'
+import { Button, Input, message, Select, Spin, Tag } from 'antd'
 import {
   CloudDownloadOutlined,
   DownloadOutlined,
@@ -16,7 +16,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons'
 import EmptyState from '../components/EmptyState'
-import MarkdownRenderer from '../components/MarkdownRenderer'
+import TutorSummaryDrawer from '../components/TutorSummaryDrawer'
 import { useDownloadStore } from '../store/downloads'
 import { formatDateTime } from '../utils/time'
 
@@ -37,8 +37,6 @@ export default function FilesPage() {
   const [chapterFilter, setChapterFilter] = useState('all')
   const [sortOrder, setSortOrder] = useState('time-desc')
   const [summaryOpen, setSummaryOpen] = useState(false)
-  const [summaryLoading, setSummaryLoading] = useState(false)
-  const [summaryText, setSummaryText] = useState('')
   const downloadRecords = useDownloadStore((state) => state.downloads)
   const addDownloadRecord = useDownloadStore((state) => state.addOrUpdate)
 
@@ -116,14 +114,16 @@ export default function FilesPage() {
 
     let alive = true
     Promise.all(files.map(async (file: any) => {
+      const cid = file.courseId || courseId
+      const fid = file.fileId || file.id
       const downloadName = file.downloadName || file.name
-      const state = await window.learn.files.downloadState(downloadName)
-      return [downloadName, state] as const
+      const state = await window.learn.files.downloadState(cid, fid, downloadName)
+      return [state.key, state] as const
     })).then((entries) => {
       if (!alive) return
       setDownloadStates((prev) => {
         const next = { ...prev }
-        for (const [name, state] of entries) next[name] = state
+        for (const [key, state] of entries) next[key] = state
         return next
       })
     })
@@ -131,13 +131,16 @@ export default function FilesPage() {
     return () => {
       alive = false
     }
-  }, [files, selectedId])
+  }, [files, selectedId, courseId])
 
   async function handleDownload(file: any) {
     const downloadName = file.downloadName || file.name
+    const cid = file.courseId || courseId!
+    const fid = file.fileId || file.id
+    const key = `${cid}_${fid}`
     try {
       message.loading({ content: `正在下载 ${file.name}...`, key: file.id })
-      const result = await window.learn.files.download(file.id, downloadName, file.downloadUrl)
+      const result = await window.learn.files.download(cid, file.id, downloadName, file.downloadUrl)
       setDownloads((prev) => ({
         ...prev,
         [result.downloadId]: {
@@ -152,6 +155,8 @@ export default function FilesPage() {
       addDownloadRecord({
         id: result.downloadId,
         fileName: downloadName,
+        courseId: cid,
+        fileId: fid,
         loaded: 0,
         total: 0,
         status: 'completed',
@@ -160,7 +165,7 @@ export default function FilesPage() {
       })
       setDownloadStates((prev) => ({
         ...prev,
-        [downloadName]: { downloaded: true, destPath: result.destPath },
+        [key]: { downloaded: true, destPath: result.destPath },
       }))
       message.success({ content: `${file.name} 下载完成`, key: file.id })
     } catch {
@@ -189,9 +194,25 @@ export default function FilesPage() {
   }
 
   async function handleBatchDownload() {
-    if (!files?.length) return
+    if (!filteredFiles?.length) return
+    const cid = courseId!
+    // Separate already-downloaded files from pending ones
+    const pending: any[] = []
+    let skipped = 0
+    for (const f of filteredFiles) {
+      if (downloadedFile(f)) {
+        skipped++
+      } else {
+        pending.push(f)
+      }
+    }
+    if (pending.length === 0) {
+      message.info('所有文件已下载完成')
+      return
+    }
     message.loading({ content: '批量下载中...', key: 'batch' })
-    const items = files.map((f: any) => ({
+    const items = pending.map((f: any) => ({
+      courseId: cid,
       fileId: f.fileId || f.id,
       fileName: f.downloadName || f.name,
       url: f.downloadUrl,
@@ -201,19 +222,20 @@ export default function FilesPage() {
       const ok = results.filter((r) => r.success).length
       const fail = results.filter((r) => !r.success).length
       message.destroy('batch')
+      const skipMsg = skipped > 0 ? `（已跳过 ${skipped} 个已完成）` : ''
       if (fail > 0) {
-        message.warning(`批量下载完成: ${ok} 成功, ${fail} 失败`)
+        message.warning(`批量下载完成: ${ok} 成功, ${fail} 失败${skipMsg}`)
       } else {
-        message.success(`批量下载完成: ${ok} 个文件`)
+        message.success(`下载 ${ok} 个文件${skipMsg}`)
       }
       // Update download states for the batch results
       setDownloadStates((prev) => {
         const next = { ...prev }
         for (const r of results) {
-          const item = files.find((f: any) => (f.fileId || f.id) === r.fileId)
+          const item = pending.find((f: any) => (f.fileId || f.id) === r.fileId)
           if (item && r.success && r.destPath) {
-            const downloadName = item.downloadName || item.name
-            next[downloadName] = { downloaded: true, destPath: r.destPath }
+            const key = `${cid}_${item.fileId || item.id}`
+            next[key] = { downloaded: true, destPath: r.destPath }
           }
         }
         return next
@@ -221,11 +243,14 @@ export default function FilesPage() {
       // Update download records
       for (const r of results) {
         if (r.success && r.destPath) {
-          const item = files.find((f: any) => (f.fileId || f.id) === r.fileId)
+          const item = pending.find((f: any) => (f.fileId || f.id) === r.fileId)
           if (item) {
+            const fid = item.fileId || item.id
             addDownloadRecord({
               id: `${r.fileId}-batch-${Date.now()}`,
               fileName: item.downloadName || item.name,
+              courseId: cid,
+              fileId: fid,
               loaded: 0,
               total: 0,
               status: 'completed',
@@ -241,39 +266,9 @@ export default function FilesPage() {
     }
   }
 
-  async function handleTutorSummary() {
+  function handleTutorSummary() {
     if (!selectedFile) return
     setSummaryOpen(true)
-    setSummaryLoading(true)
-    setSummaryText('')
-    const sessionId = `file-summary-${Date.now()}`
-    const unsubChunk = window.learn.hwai.onChunk((data) => {
-      if (data.sessionId === sessionId && data.delta) {
-        setSummaryText((prev) => prev + data.delta)
-      }
-    })
-    const unsubEnd = window.learn.hwai.onEnd((data) => {
-      if (data.sessionId === sessionId) setSummaryLoading(false)
-    })
-    try {
-      const result = await window.learn.hwai.summarizeFile({
-        name: selectedFile.name,
-        url: selectedFile.downloadUrl,
-        fileType: selectedFile.fileType,
-        sessionId,
-      })
-      if (!result.ok) {
-        setSummaryText(result.error || '总结生成失败')
-      } else if (!summaryText) {
-        setSummaryText(result.content || '暂无内容')
-      }
-    } catch (err: any) {
-      setSummaryText('总结生成失败：' + (err.message || '未知错误'))
-    } finally {
-      unsubChunk()
-      unsubEnd()
-      setSummaryLoading(false)
-    }
   }
 
   function formatSize(bytes: number) {
@@ -283,21 +278,25 @@ export default function FilesPage() {
   }
 
   function downloadedFile(record: any): { destPath: string } | null {
-    const downloadName = record.downloadName || record.name
-    const state = downloadStates[downloadName]
+    const cid = record.courseId || courseId
+    const fid = record.fileId || record.id
+    const key = `${cid}_${fid}`
+
+    const state = downloadStates[key]
     if (state?.downloaded) return { destPath: state.destPath }
 
     const history = downloadRecords.find((item) => (
       item.status === 'completed' &&
       item.destPath &&
-      (item.fileName === record.name || item.fileName === downloadName)
+      item.courseId === cid &&
+      item.fileId === fid
     ))
     if (history?.destPath) return { destPath: history.destPath }
 
     const current = Object.values(downloads).find((item) => (
       item.destPath &&
-      (item.fileName === record.name || item.fileName === downloadName) &&
-      item.status === 'completed'
+      item.status === 'completed' &&
+      item.fileName === (record.downloadName || record.name)
     ))
     return current?.destPath ? { destPath: current.destPath } : null
   }
@@ -324,10 +323,10 @@ export default function FilesPage() {
   const selectedMeta = useMemo(() => {
     if (!selectedFile) return null
     return {
-      uploadTime: formatDateTime(selectedFile.uploadTime) || '2026-05-26 23:59',
+      uploadTime: formatDateTime(selectedFile.uploadTime) || '—',
       size: formatSize(selectedFile.size),
-      source: selectedFile.publisher || selectedFile.teacher || '任课教师',
-      desc: '本章介绍课程资料中的核心概念与实践方法，可配合甘蔗 Tutor 生成摘要、重点和复习提纲。',
+      source: selectedFile.publisher || selectedFile.teacher || '—',
+      desc: selectedFile.description || '',
     }
   }, [selectedFile])
 
@@ -376,12 +375,13 @@ export default function FilesPage() {
                   <small>{formatSize(file.size)} · {formatDateTime(file.uploadTime) || '-'}</small>
                 </span>
                 <span className="lp2-file-status">
-                  {dl ? <Tag color="green">已下载</Tag> : <Tag color="purple">未下载</Tag>}
+                  {dl ? <Tag color="green">已下载</Tag> : null}
                   <span className="lp2-file-actions-inline">
                     <button
                       type="button"
                       className="lp2-file-action-button"
                       aria-label="预览课件"
+                      title="预览课件"
                       onClick={(event) => {
                         event.stopPropagation()
                         handlePreview(file)
@@ -393,6 +393,7 @@ export default function FilesPage() {
                       type="button"
                       className="lp2-file-action-button"
                       aria-label={dl ? '打开课件' : '下载课件'}
+                      title={dl ? '打开课件' : '下载课件'}
                       onClick={(event) => {
                         event.stopPropagation()
                         if (dl) {
@@ -426,8 +427,12 @@ export default function FilesPage() {
               <strong>{selectedMeta.size}</strong>
               <span>来源</span>
               <strong>{selectedMeta.source}</strong>
-              <span>简介</span>
-              <p>{selectedMeta.desc}</p>
+              {selectedMeta.desc && (
+                <>
+                  <span>简介</span>
+                  <p>{selectedMeta.desc}</p>
+                </>
+              )}
             </div>
             <div className="lp2-file-detail-actions">
               {selectedDownload ? (
@@ -453,22 +458,26 @@ export default function FilesPage() {
         )}
       </div>
 
-      <Modal
-        title="甘蔗 Tutor 课件总结"
-        open={summaryOpen}
-        onCancel={() => setSummaryOpen(false)}
-        footer={null}
-        width={600}
-      >
-        {summaryLoading && !summaryText ? (
-          <div style={{ textAlign: 'center', padding: 32 }}>
-            <Spin />
-            <p style={{ marginTop: 12, color: '#888' }}>正在生成课件总结...</p>
-          </div>
-        ) : (
-          <MarkdownRenderer content={summaryText} />
-        )}
-      </Modal>
+      {selectedFile && (
+        <TutorSummaryDrawer
+          open={summaryOpen}
+          onClose={() => setSummaryOpen(false)}
+          title={`课件总结 · ${selectedFile.name}`}
+          summaryKey={`file:${courseId}:${selectedFile.fileId || selectedFile.id}`}
+          run={(sessionId) => window.learn.hwai.summarizeFile({
+            name: selectedFile.name,
+            url: selectedFile.downloadUrl,
+            fileType: selectedFile.fileType,
+            sessionId,
+          })}
+          chatRun={(question, history, sessionId) => window.learn.hwai.fileChat({
+            file: { name: selectedFile.name, url: selectedFile.downloadUrl, fileType: selectedFile.fileType },
+            question,
+            history,
+            sessionId,
+          })}
+        />
+      )}
     </div>
   )
 }

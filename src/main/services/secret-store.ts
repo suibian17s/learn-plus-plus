@@ -99,13 +99,13 @@ export function loadApiKey(provider = 'default'): string {
 
   const store = readApiKeyStore()
   const key = provider || 'default'
-  const providerKey = key === 'default' ? '' : store.providers[key]
-  if (providerKey) return providerKey
-  if (store.default) {
-    writeApiKeyStore(store)
-    return store.default
+  if (key === 'default') {
+    return store.default || ''
   }
-  return ''
+  // Each provider is independent — never fall back to the default key.
+  // This prevents e.g. the AI key being sent as an email password when
+  // the mail provider has no stored credential.
+  return store.providers[key] || ''
 }
 
 export function hasApiKey(provider = 'default'): boolean {

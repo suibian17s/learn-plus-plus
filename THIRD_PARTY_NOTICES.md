@@ -23,6 +23,14 @@ See `package.json` and `package-lock.json` for the complete dependency graph and
 
 learn++ is a third-party, unofficial client and is not affiliated with Tsinghua University or the official Tsinghua Learn platform.
 
+## Mail
+
+- `node-imap` — IMAP mailbox access
+- `mailparser` — MIME message parsing
+- `nodemailer` — SMTP mail sending
+
+These packages power the built-in Tsinghua mailbox client.
+
 ## Document Processing
 
 - `pdf-parse`

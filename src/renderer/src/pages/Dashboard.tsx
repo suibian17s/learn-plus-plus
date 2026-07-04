@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Progress, Spin, Tag, message } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/auth'
+import { useTutorStore } from '../store/tutor'
 import CourseIcon from '../components/CourseIcon'
 import tutorAvatar from '../assets/sugarcane-tutor.png'
 
@@ -10,6 +11,7 @@ interface DashboardData {
   streakDays: number
   completedCourses: number
   totalCourses: number
+  coursesWithHomework: number
   weeklyMinutes: number
   todayFocus: { priority: string; courseName: string; courseId: string; title: string; tag: string; deadline?: string; targetTab: string; targetId?: string }[]
   courseProgress: { courseId: string; courseName: string; done: number; total: number; percent: number }[]
@@ -59,16 +61,9 @@ export default function Dashboard() {
       }
       setStatsLoading(true)
       try {
-        const homeworksByCourse: Record<string, any[]> = {}
-        const noticesByCourse: Record<string, any[]> = {}
-        const discussionsByCourse: Record<string, any[]> = {}
-        for (const c of courses) {
-          try { homeworksByCourse[c.id] = await window.learn.hw.list(c.id) } catch { homeworksByCourse[c.id] = [] }
-          try { noticesByCourse[c.id] = await window.learn.notice.list(c.id) } catch { noticesByCourse[c.id] = [] }
-          try { discussionsByCourse[c.id] = await window.learn.disc.list(c.id) } catch { discussionsByCourse[c.id] = [] }
-        }
-        if (cancelled) return
-        const result = await window.learn.stats.computeDashboard({ courses, homeworksByCourse, noticesByCourse, discussionsByCourse })
+        // B14 fix: single IPC call instead of N*3 serial per-course calls.
+        // Main process fetches all data in parallel with concurrency limit + 5-min TTL cache.
+        const result = await window.learn.stats.refreshDashboard({ courses })
         if (!cancelled) {
           cachedStats = result
           cachedKey = key
@@ -111,7 +106,10 @@ export default function Dashboard() {
 
   const overallPercent = useMemo(() => {
     if (!stats || !stats.courseProgress.length) return 0
-    return Math.round(stats.courseProgress.reduce((s, c) => s + c.percent, 0) / stats.courseProgress.length)
+    // B12 fix: exclude courses with no homework (percent === -1) from average
+    const withHw = stats.courseProgress.filter((cp: any) => cp.total > 0)
+    if (withHw.length === 0) return 0
+    return Math.round(withHw.reduce((s: number, c: any) => s + c.percent, 0) / withHw.length)
   }, [stats])
 
   const weeklyHours = stats ? (stats.weeklyMinutes / 60).toFixed(1) + ' h' : '0 h'
@@ -128,7 +126,7 @@ export default function Dashboard() {
 
   const focusItems = useMemo(() => {
     if (!stats) return []
-    return stats.todayFocus.slice(0, 6).map((item) => ({
+    return stats.todayFocus.slice(0, 6).map((item: any) => ({
       key: `${item.courseId}-${item.title}`,
       course: item.courseName,
       title: item.title,
@@ -136,13 +134,20 @@ export default function Dashboard() {
       priority: item.priority,
       deadline: formatDeadline(item.deadline),
       remaining: formatRemainingDays(item.deadline),
-      onClick: () => goCourseTab(item.courseId, item.targetTab),
+      onClick: () => {
+        if (item.targetTab === 'mailbox') {
+          navigate(`/mailbox?mailId=${item.targetId}`)
+        } else {
+          goCourseTab(item.courseId, item.targetTab)
+        }
+      },
     }))
   }, [stats])
 
   const updates = useMemo(() => {
     if (!stats) return []
-    return stats.recentUpdates.map((u) => ({
+    // 快照含 100 条供"全部记录"页复用，首页卡片只展示前 10 条
+    return stats.recentUpdates.slice(0, 10).map((u) => ({
       key: `${u.courseId}-${u.text}`,
       course: u.courseName,
       text: u.text,
@@ -150,6 +155,15 @@ export default function Dashboard() {
       kind: u.kind,
     }))
   }, [stats])
+
+  // SWR：主进程后台刷新完成后推送最新数据，静默更新界面
+  useEffect(() => {
+    const unsub = window.learn.stats.onUpdated((fresh: any) => {
+      cachedStats = fresh
+      setStats(fresh)
+    })
+    return () => { unsub() }
+  }, [])
 
   const isReady = !statsLoading && stats
 
@@ -164,9 +178,20 @@ export default function Dashboard() {
           <div>
             <Tag color="green">甘蔗 Tutor</Tag>
             <h3>你的 AI 学习助手</h3>
-            <Button className="lp2-green-button" onClick={() => navigate('/tutor')}>
-              问问甘蔗
-            </Button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button className="lp2-green-button" onClick={() => navigate('/tutor')}>
+                问问甘蔗
+              </Button>
+              <Button
+                className="lp2-green-button"
+                onClick={() => {
+                  useTutorStore.getState().startFocused(null, '生成今日简报：我今天/近期要交的作业和收件箱里的新邮件概览')
+                  navigate('/tutor')
+                }}
+              >
+                今日简报
+              </Button>
+            </div>
           </div>
           <img src={tutorAvatar} alt="甘蔗 Tutor" />
         </div>
@@ -199,7 +224,7 @@ export default function Dashboard() {
                   )}
                 />
                 <div className="lp2-overview-metrics">
-                  <span><small>已完成课程</small><strong>{stats?.completedCourses ?? 0} / {stats?.totalCourses ?? courses.length}</strong></span>
+                  <span><small>已完成课程</small><strong>{stats?.completedCourses ?? 0} / {stats?.coursesWithHomework ?? stats?.totalCourses ?? courses.length}</strong></span>
                   <span><small>本周学习时长</small><strong>{weeklyHours}</strong></span>
                   <span><small>连续学习天数</small><strong>{stats?.streakDays ?? 0} 天</strong></span>
                 </div>
@@ -242,15 +267,21 @@ export default function Dashboard() {
             ) : progressRows.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 32, color: '#999' }}>暂无课程数据</div>
             ) : (
-              progressRows.map((row: any, index: number) => (
+              progressRows.map((row: any) => (
                 <button
                   key={row.key} type="button" className="lp2-course-progress-row"
                   onClick={() => row.courseId && navigate(`/course/${row.courseId}/files`)}
                 >
                   <CourseIcon courseName={row.name} size="sm" />
                   <span className="lp2-progress-name">{row.name}</span>
-                  <Progress percent={row.percent} showInfo={false} size="small" />
-                  <strong>{row.percent}%</strong>
+                  {row.percent >= 0 ? (
+                    <>
+                      <Progress percent={row.percent} showInfo={false} size="small" />
+                      <strong>{row.percent}%</strong>
+                    </>
+                  ) : (
+                    <span style={{ color: '#999', fontSize: 12, minWidth: 40, textAlign: 'right' }}>无作业</span>
+                  )}
                 </button>
               ))
             )}

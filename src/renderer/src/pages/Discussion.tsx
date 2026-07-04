@@ -1,18 +1,16 @@
 import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Input, List, Modal, Spin } from 'antd'
+import { Button, Input, List, Spin } from 'antd'
 import { MessageOutlined, RobotOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons'
 import EmptyState from '../components/EmptyState'
-import MarkdownRenderer from '../components/MarkdownRenderer'
+import TutorSummaryDrawer from '../components/TutorSummaryDrawer'
 
 export default function DiscussionPage() {
   const { courseId } = useParams()
   const navigate = useNavigate()
   const [keyword, setKeyword] = useState('')
-  const [summaryOpen, setSummaryOpen] = useState(false)
-  const [summaryLoading, setSummaryLoading] = useState(false)
-  const [summaryText, setSummaryText] = useState('')
+  const [summaryTarget, setSummaryTarget] = useState<any>(null)
 
   const { data: discussions, isLoading } = useQuery({
     queryKey: ['discussions', courseId],
@@ -64,31 +62,9 @@ export default function DiscussionPage() {
                 className="lp2-green-button"
                 size="small"
                 icon={<RobotOutlined />}
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.stopPropagation()
-                  setSummaryOpen(true)
-                  setSummaryLoading(true)
-                  setSummaryText('')
-                  const sessionId = `discussion-summary-${Date.now()}`
-                  const unsubChunk = window.learn.hwai.onChunk((data) => {
-                    if (data.sessionId === sessionId && data.delta) {
-                      setSummaryText((prev) => prev + data.delta)
-                    }
-                  })
-                  const unsubEnd = window.learn.hwai.onEnd((data) => {
-                    if (data.sessionId === sessionId) setSummaryLoading(false)
-                  })
-                  try {
-                    const prompt = `请总结以下课程讨论：\n标题：${item.title || ''}\n作者：${item.author || ''}\n时间：${item.publishTime || ''}\n回复数：${item.replyCount || 0}`
-                    const result = await window.learn.hwai.tutorAsk(courseId!, prompt, sessionId)
-                    if (!result.ok) setSummaryText(result.error || '总结生成失败')
-                  } catch (err: any) {
-                    setSummaryText('总结生成失败：' + (err.message || '未知错误'))
-                  } finally {
-                    unsubChunk()
-                    unsubEnd()
-                    setSummaryLoading(false)
-                  }
+                  setSummaryTarget(item)
                 }}
               >
                 甘蔗 Tutor
@@ -117,22 +93,18 @@ export default function DiscussionPage() {
         )}
       />
 
-      <Modal
-        title="甘蔗 Tutor 讨论总结"
-        open={summaryOpen}
-        onCancel={() => setSummaryOpen(false)}
-        footer={null}
-        width={600}
-      >
-        {summaryLoading && !summaryText ? (
-          <div style={{ textAlign: 'center', padding: 32 }}>
-            <Spin />
-            <p style={{ marginTop: 12, color: '#888' }}>正在生成讨论总结...</p>
-          </div>
-        ) : (
-          <MarkdownRenderer content={summaryText} />
-        )}
-      </Modal>
+      {summaryTarget && (
+        <TutorSummaryDrawer
+          open={!!summaryTarget}
+          onClose={() => setSummaryTarget(null)}
+          title={`讨论总结 · ${summaryTarget.title || ''}`}
+          summaryKey={`discussion:${courseId}:${summaryTarget.id}`}
+          run={(sessionId) => {
+            const prompt = `请总结以下课程讨论：\n标题：${summaryTarget.title || ''}\n作者：${summaryTarget.author || ''}\n时间：${summaryTarget.publishTime || ''}\n回复数：${summaryTarget.replyCount || 0}`
+            return window.learn.hwai.tutorAsk(courseId!, prompt, sessionId)
+          }}
+        />
+      )}
     </div>
   )
 }

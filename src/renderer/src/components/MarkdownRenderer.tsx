@@ -1,14 +1,31 @@
 import React from 'react'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 
 type InlinePart =
   | { type: 'text'; value: string }
   | { type: 'bold'; value: string }
   | { type: 'code'; value: string }
   | { type: 'link'; label: string; href: string }
+  | { type: 'math'; value: string }
+
+// LaTeX 特征：含反斜杠命令 / 上下标 / 花括号。用于把 $x^2$ 当公式，$350 当货币。
+function isLatexLike(s: string): boolean {
+  return /[\\^_{}]/.test(s)
+}
+
+function renderMath(tex: string, display: boolean): string {
+  try {
+    return katex.renderToString(tex.trim(), { throwOnError: false, displayMode: display, output: 'html' })
+  } catch {
+    return ''
+  }
+}
 
 function parseInline(text: string): InlinePart[] {
   const parts: InlinePart[] = []
-  const pattern = /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\))/g
+  // 顺序：粗体 / 行内代码 / 链接 / \(...\) 数学 / $...$ 数学（货币保护）
+  const pattern = /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|\\\(([\s\S]+?)\\\)|\$([^$\n]+?)\$)/g
   let lastIndex = 0
   let match: RegExpExecArray | null
 
@@ -19,6 +36,11 @@ function parseInline(text: string): InlinePart[] {
     if (match[2]) parts.push({ type: 'bold', value: match[2] })
     else if (match[3]) parts.push({ type: 'code', value: match[3] })
     else if (match[4] && match[5]) parts.push({ type: 'link', label: match[4], href: match[5] })
+    else if (match[6] != null) parts.push({ type: 'math', value: match[6] })
+    else if (match[7] != null) {
+      if (isLatexLike(match[7])) parts.push({ type: 'math', value: match[7] })
+      else parts.push({ type: 'text', value: match[0] }) // 货币等，原样保留
+    }
     lastIndex = pattern.lastIndex
   }
 
@@ -38,6 +60,11 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
         </a>
       )
     }
+    if (part.type === 'math') {
+      const html = renderMath(part.value, false)
+      if (html) return <span key={key} className="lp2-md-math-inline" dangerouslySetInnerHTML={{ __html: html }} />
+      return <code key={key}>{part.value}</code>
+    }
     return <React.Fragment key={key}>{part.value}</React.Fragment>
   })
 }
@@ -48,9 +75,42 @@ export default function MarkdownRenderer({ content }: { content: string }) {
   let listItems: React.ReactNode[] = []
   let orderedItems: React.ReactNode[] = []
   let codeLines: string[] = []
+  let tableRows: string[][] = []
+  let mathLines: string[] = []
   let inCode = false
+  let inMath = false
+
+  function pushMathBlock(tex: string) {
+    const html = renderMath(tex, true)
+    if (html) {
+      nodes.push(<div key={`math-${nodes.length}`} className="lp2-md-math-block" dangerouslySetInnerHTML={{ __html: html }} />)
+    } else {
+      nodes.push(<pre key={`math-${nodes.length}`}><code>{tex}</code></pre>)
+    }
+  }
+
+  function flushTable() {
+    if (!tableRows.length) return
+    const [head, ...body] = tableRows
+    nodes.push(
+      <div key={`tw-${nodes.length}`} className="lp2-md-table-wrap">
+        <table className="lp2-md-table">
+          <thead>
+            <tr>{head.map((cell, ci) => <th key={ci}>{renderInline(cell, `th-${nodes.length}-${ci}`)}</th>)}</tr>
+          </thead>
+          <tbody>
+            {body.map((row, ri) => (
+              <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{renderInline(cell, `td-${nodes.length}-${ri}-${ci}`)}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>,
+    )
+    tableRows = []
+  }
 
   function flushLists() {
+    flushTable()
     if (listItems.length) {
       nodes.push(<ul key={`ul-${nodes.length}`}>{listItems}</ul>)
       listItems = []
@@ -85,20 +145,57 @@ export default function MarkdownRenderer({ content }: { content: string }) {
       return
     }
 
-    const reference = line.match(/^<span class="lp2-reference-note">([\s\S]*)<\/span>$/)
-    if (reference) {
+    const trimmed = line.trim()
+
+    // 块级数学：$$...$$ 或 \[...\]（可跨行）
+    if (inMath) {
+      if (trimmed.endsWith('$$') || trimmed.endsWith('\\]')) {
+        mathLines.push(trimmed.replace(/(\$\$|\\\])\s*$/, ''))
+        pushMathBlock(mathLines.join('\n'))
+        inMath = false
+        mathLines = []
+      } else {
+        mathLines.push(line)
+      }
+      return
+    }
+    if (trimmed === '$$' || trimmed === '\\[') {
       flushLists()
-      nodes.push(
-        <span key={`ref-${index}`} className="lp2-reference-note">
-          {reference[1]}
-        </span>,
-      )
+      inMath = true
+      mathLines = []
+      return
+    }
+    const singleLineMath = trimmed.match(/^\$\$([\s\S]+)\$\$$/) || trimmed.match(/^\\\[([\s\S]+)\\\]$/)
+    if (singleLineMath) {
+      flushLists()
+      pushMathBlock(singleLineMath[1])
+      return
+    }
+    if (trimmed.startsWith('$$')) {
+      flushLists()
+      inMath = true
+      mathLines = [trimmed.slice(2)]
       return
     }
 
-    const trimmed = line.trim()
     if (!trimmed) {
       flushLists()
+      return
+    }
+
+    // GFM 表格：| a | b | 行；分隔行（|---|---|）跳过
+    if (/^\|.*\|$/.test(trimmed)) {
+      if (/^\|[\s:\-|]+\|$/.test(trimmed)) return // header separator
+      const cells = trimmed.slice(1, -1).split('|').map((c) => c.trim())
+      tableRows.push(cells)
+      return
+    }
+    flushTable()
+
+    // 水平分割线
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      flushLists()
+      nodes.push(<hr key={`hr-${index}`} className="lp2-md-hr" />)
       return
     }
 
@@ -135,6 +232,7 @@ export default function MarkdownRenderer({ content }: { content: string }) {
     nodes.push(<p key={`p-${index}`}>{renderInline(trimmed, `p-${index}`)}</p>)
   })
 
+  if (inMath && mathLines.length) pushMathBlock(mathLines.join('\n'))
   flushCode()
   flushLists()
 

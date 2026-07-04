@@ -4,7 +4,7 @@ import { parseAttachment } from './attachment-parser'
 import { buildDocx, buildPdf } from './attachment-builder'
 import { downloadUrlToBuffer } from './downloader'
 import type { HomeworkSummary, AnalyzedHomework, HomeworkType, GenerateRequestParams, GenerateResult, ParsedAttachment } from '../types'
-import { BrowserWindow } from 'electron'
+import type { WebContents } from 'electron'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -200,7 +200,10 @@ export async function analyze(courseId: string, hwId: string): Promise<AnalyzedH
 
 const activeGenerations = new Map<string, AbortController>()
 
-export async function generate(req: GenerateRequestParams): Promise<GenerateResult> {
+export async function generate(
+  req: GenerateRequestParams,
+  sender?: WebContents,
+): Promise<GenerateResult> {
   const { analyzed, userInstruction, sessionId } = req
   const abortController = new AbortController()
   activeGenerations.set(sessionId, abortController)
@@ -227,9 +230,8 @@ export async function generate(req: GenerateRequestParams): Promise<GenerateResu
       signal: abortController.signal,
       onChunk: (delta) => {
         fullResponse += delta
-        const win = BrowserWindow.getAllWindows()[0]
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('hwai:generate-chunk', { sessionId, delta })
+        if (sender && !sender.isDestroyed()) {
+          sender.send('hwai:generate-chunk', { sessionId, delta })
         }
       },
     })
@@ -247,9 +249,8 @@ export async function generate(req: GenerateRequestParams): Promise<GenerateResu
       }
     }
 
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('hwai:generate-end', { sessionId })
+    if (sender && !sender.isDestroyed()) {
+      sender.send('hwai:generate-end', { sessionId })
     }
 
     return {

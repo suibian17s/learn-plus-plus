@@ -19,23 +19,23 @@ export interface LearnApi {
   }
   files: {
     list: (courseId: string) => Promise<any[]>
-    download: (fileId: string, fileName: string, url: string) => Promise<{ downloadId: string; destPath: string }>
+    download: (courseId: string, fileId: string, fileName: string, url: string) => Promise<{ downloadId: string; destPath: string }>
     openFolder: (filePath: string) => Promise<void>
     openFile: (filePath: string) => Promise<void>
     previewWindow: (filePath: string, fileName: string) => Promise<void>
     selectDirectory: () => Promise<string | null>
     exists: (filePath: string) => Promise<boolean>
-    downloadState: (fileName: string) => Promise<{ downloaded: boolean; destPath: string }>
+    downloadState: ((fileName: string) => Promise<{ key: string; downloaded: boolean; destPath: string }>) & ((courseId: string, fileId: string, fileName: string) => Promise<{ key: string; downloaded: boolean; destPath: string }>)
     preview: (fileId: string, fileName: string, url: string) => Promise<{ tempPath: string; fileType: string }>
     previewOpen: (fileId: string, fileName: string, url: string) => Promise<{ method: string; content: string; fileName: string }>
-    batchDownload: (items: { fileId: string; fileName: string; url: string }[]) => Promise<{ fileId: string; success: boolean; destPath?: string; error?: string }[]>
+    batchDownload: (items: { courseId: string; fileId: string; fileName: string; url: string }[]) => Promise<{ fileId: string; success: boolean; destPath?: string; error?: string }[]>
     onProgress: (cb: (data: any) => void) => () => void
   }
   hw: {
     list: (courseId: string) => Promise<any[]>
     submit: (studentHomeworkId: string, content: string, attachmentPath?: string, removeOld?: boolean) => Promise<{ ok: boolean; error?: string }>
     selectFile: () => Promise<{ path: string; name: string; size: number; error?: string } | null>
-    downloadAttachment: (url: string, fileName: string) => Promise<{ downloadId: string; destPath: string }>
+    downloadAttachment: (url: string, fileName: string, courseId?: string) => Promise<{ downloadId: string; destPath: string }>
   }
   disc: {
     list: (courseId: string) => Promise<any[]>
@@ -59,11 +59,13 @@ export interface LearnApi {
     abort: (sessionId: string) => Promise<void>
     hasAcknowledgedRisk: () => Promise<boolean>
     acknowledgeRisk: () => Promise<{ ok: boolean }>
-    tutorChat: (params: { messages: { role: string; content: string }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string }) => Promise<{ finishReason: string; error?: string; messageCount: number }>
+    tutorChat: (params: { messages: { role: string; content: string; images?: string[] }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string; pageContext?: { label?: string; courseId?: string; courseName?: string; itemTitle?: string; itemExcerpt?: string } }) => Promise<{ finishReason: string; error?: string; messageCount: number }>
     tutorAbort: (sessionId: string) => Promise<void>
+    draftMail: (params: { purpose: string; subject?: string }) => Promise<{ ok: boolean; draft?: string; error?: string }>
     onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => () => void
     onEnd: (cb: (data: { sessionId: string }) => void) => () => void
     summarizeFile: (file: { name: string; url: string; fileType?: string; sessionId?: string }) => Promise<{ ok: boolean; content?: string; error?: string }>
+    fileChat: (req: { file: { name: string; url: string; fileType?: string }; question: string; history: { role: 'user' | 'assistant'; content: string }[]; sessionId?: string }) => Promise<{ ok: boolean; content?: string; error?: string }>
     healthCheck: () => Promise<{ ok: boolean; error?: string }>
     orchestrate: (params: { analyzed: any; sessionId: string; outputFormat?: string }) => Promise<{ ok: boolean; result?: any; error?: string }>
     onOrchestrateChunk: (cb: (data: { sessionId: string; phase: any; detail?: string; content?: string }) => void) => () => void
@@ -82,24 +84,33 @@ export interface LearnApi {
       noticesByCourse: Record<string, any[]>
       discussionsByCourse: Record<string, any[]>
     }) => Promise<any>
+    refreshDashboard: (payload: {
+      courses: { id: string; name: string; teacher: string }[]
+    }) => Promise<any>
+    onUpdated: (cb: (data: any) => void) => () => void
+  }
+  focus: {
+    add: (item: { id: string; type: 'email'; title: string; description: string; createdAt: string; mailId: string }) => Promise<{ ok: boolean }>
+    remove: (id: string) => Promise<{ ok: boolean }>
+    list: () => Promise<{ id: string; type: 'email'; title: string; description: string; createdAt: string; mailId: string }[]>
   }
   search: {
     query: (q: string, typeFilter?: string) => Promise<any[]>
     indexItems: (type: string, items: any[], targetTab: string) => Promise<{ ok: boolean }>
   }
   mail: {
-    login: () => Promise<{ ok: boolean }>
     loginImap: (config: { imapHost: string; imapPort: number; imapTls: boolean; smtpHost: string; smtpPort: number; smtpTls: boolean; username: string; password: string }) => Promise<{ ok: boolean }>
     testConnection: (config: { imapHost: string; imapPort: number; imapTls: boolean; smtpHost: string; smtpPort: number; smtpTls: boolean; username: string; password: string }) => Promise<{ ok: boolean }>
     status: () => Promise<{ loggedIn: boolean }>
-    check: () => Promise<{ loggedIn: boolean; unreadCount: number; latestId: string; total: number; mode: 'web' | 'imap' }>
-    list: (folder: string) => Promise<{ mails: { id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
-    get: (mailId: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean; body: string; attachments: { name: string; url: string }[] } | null>
-    star: (mailId: string, starred: boolean) => Promise<{ ok: boolean }>
-    delete: (mailId: string) => Promise<{ ok: boolean }>
+    check: () => Promise<{ loggedIn: boolean; unreadCount: number; latestId: string; total: number }>
+    list: (folder: string, force?: boolean) => Promise<{ mails: { id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]; total: number }>
+    search: (query: string, folder?: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean }[]>
+    get: (mailId: string, folder?: string) => Promise<{ id: string; subject: string; from: string; to: string; date: string; preview: string; starred: boolean; read: boolean; body: string; htmlBody?: string; attachments: { name: string; url: string }[] } | null>
+    star: (mailId: string, starred: boolean) => Promise<{ ok: boolean; error?: string }>
+    delete: (mailId: string, currentFolder?: string) => Promise<{ ok: boolean; error?: string }>
     logout: () => Promise<{ ok: boolean }>
-    show: () => Promise<void>
-    compose: (params: { to: string; subject: string; body: string }) => Promise<{ ok: boolean; error?: string }>
+    compose: (params: { to: string; subject: string; body: string }) => Promise<{ ok: boolean; error?: string; warning?: string }>
+    saveAttachment: (tempPath: string, fileName: string) => Promise<{ ok: boolean; destPath?: string; error?: string }>
   }
   app: {
     info: () => Promise<{
@@ -121,11 +132,7 @@ export interface LearnApi {
       releasesUrl?: string
       error?: string
     }>
-    controlWindow: (command: 'minimize' | 'toggle-maximize' | 'close') => void
-    minimizeWindow: () => Promise<void>
-    toggleMaximizeWindow: () => Promise<void>
-    closeWindow: () => Promise<void>
-    quitWindow: () => Promise<void>
+    controlWindow: (command: 'minimize' | 'toggle-maximize' | 'close' | 'quit') => void
     onResume: (cb: () => void) => () => void
   }
   onAutoLoginResult: (cb: (loggedIn: boolean) => void) => () => void

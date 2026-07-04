@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Alert, Badge, Button, Dropdown, Input, Layout, message, Select, Tooltip } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
@@ -23,6 +23,7 @@ import {
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/auth'
 import { useDownloadStore } from '../store/downloads'
+import { useTutorStore } from '../store/tutor'
 import TsinghuaLogo from './TsinghuaLogo'
 import WindowControls from './WindowControls'
 import CourseIcon from './CourseIcon'
@@ -64,8 +65,21 @@ export default function AppShell() {
   const [searchValue, setSearchValue] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)
+  const [searchDebounce, setSearchDebounce] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [mailSubOpen, setMailSubOpen] = useState(false)
   const [mailHasNew, setMailHasNew] = useState(false)
+  const lastAnimAtRef = useRef(0)
+
+  // 非线性动画节流：10 秒内的连续导航不重播进场/级联动画，避免频繁晃眼
+  useEffect(() => {
+    const now = Date.now()
+    if (now - lastAnimAtRef.current < 10000) {
+      document.body.classList.add('lp2-anim-quiet')
+    } else {
+      document.body.classList.remove('lp2-anim-quiet')
+      lastAnimAtRef.current = now
+    }
+  }, [location.pathname, location.search])
 
   const pathParts = location.pathname.split('/')
   const isCourseRoute = location.pathname.startsWith('/course/')
@@ -247,7 +261,22 @@ export default function AppShell() {
 
       const semestersData = (result.semesters || []).map(normalizeSemester)
       const currentData = normalizeSemester(result.current || semestersData[0])
-      const candidates = uniqueSemesters(currentData, semestersData)
+
+      // Read persisted semester preference from settings
+      let preferredSemesterId: string | null = null
+      try {
+        const settings = await window.learn.settings.getAll()
+        if (settings.lastSemesterId) preferredSemesterId = settings.lastSemesterId
+      } catch { /* settings unavailable, use default */ }
+
+      // Build candidates: preferred semester first, then current, then rest
+      let candidates = uniqueSemesters(currentData, semestersData)
+      if (preferredSemesterId && preferredSemesterId !== candidates[0]?.id) {
+        const preferred = semestersData.find((s: any) => s.id === preferredSemesterId)
+        if (preferred) {
+          candidates = [preferred, ...candidates.filter((c) => c.id !== preferred.id)]
+        }
+      }
       let loadedSemester = candidates[0] || currentData
       let coursesData: any[] = []
       let lastError = ''
@@ -412,19 +441,35 @@ export default function AppShell() {
 
   async function handleSearch(value: string) {
     setSearchValue(value)
-    if (!value.trim()) { setSearchResults([]); setShowResults(false); return }
-    const results = await window.learn.search.query(value)
-    setSearchResults(results)
-    setShowResults(true)
+    if (searchDebounce) clearTimeout(searchDebounce)
+
+    if (!value.trim()) {
+      setSearchResults([])
+      setShowResults(false)
+      setSearchDebounce(null)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      const results = await window.learn.search.query(value.trim())
+      setSearchResults(results)
+      setShowResults(true)
+    }, 300)
+    setSearchDebounce(timer)
   }
 
   function handleResultClick(result: any) {
     setShowResults(false)
     setSearchValue('')
-    if (result.courseId) {
-      navigate(`/course/${result.courseId}/${result.targetTab || 'notifications'}`)
-    } else if (result.targetTab === 'mailbox') {
-      navigate('/mailbox')
+    if (result.type === 'email') {
+      navigate(`/mailbox?folder=inbox&mailId=${result.targetId || ''}`)
+    } else if (result.courseId) {
+      const tab = result.targetTab || 'notifications'
+      if (result.targetId && result.type === 'homework') {
+        navigate(`/course/${result.courseId}/${tab}?hwId=${result.targetId}`)
+      } else {
+        navigate(`/course/${result.courseId}/${tab}`)
+      }
     }
   }
 
@@ -498,7 +543,6 @@ export default function AppShell() {
             <h1>甘蔗 Tutor</h1>
             <p>你的 AI 学习助手</p>
           </div>
-          <span className="lp2-online-pill"><CheckCircleOutlined /> 在线</span>
         </div>
       )
     }
@@ -510,7 +554,22 @@ export default function AppShell() {
             <h1>{selectedCourse.name}</h1>
             <p>{selectedCourse.teacher || '课程教师'} · {currentSemester?.name || '当前学期'}</p>
           </div>
-          <div className="lp2-context-stats lp2-context-stats-placeholder" aria-hidden="true" />
+          <div className="lp2-ask-tutor-slot">
+            <Button
+              className="lp2-green-button lp2-ask-tutor-button"
+              icon={<RobotOutlined />}
+              onClick={() => {
+                useTutorStore.getState().startFocused({
+                  label: `课程「${selectedCourse.name}」`,
+                  courseId: selectedCourse.id,
+                  courseName: selectedCourse.name,
+                })
+                navigate('/tutor')
+              }}
+            >
+              问甘蔗
+            </Button>
+          </div>
           <nav className="lp2-course-tabs" aria-label="课程标签">
             {tabs.map((tab) => (
               <button
@@ -531,6 +590,28 @@ export default function AppShell() {
     if (isMailboxRoute) {
       const params = new URLSearchParams(location.search)
       const activeFilter = params.get('filter') || 'all'
+      const isReadingMail = !!params.get('mailId')
+      const isComposing = params.get('compose') === '1'
+      // 读信/写信状态下隐藏列表控件（筛选/排序/刷新会清掉 mailId 把用户踢回列表）
+      if (isReadingMail || isComposing) {
+        return (
+          <div className="lp2-context-head lp2-mail-context-head lp2-mail-context-head-reading">
+            <div className="lp2-context-title">
+              <h1>{isComposing ? '写邮件' : '邮件详情'}</h1>
+            </div>
+            {!isComposing && (
+              <Button
+                type="primary"
+                className="lp2-mail-compose-button"
+                icon={<EditOutlined />}
+                onClick={() => updateMailQuery({ compose: '1' })}
+              >
+                写邮件
+              </Button>
+            )}
+          </div>
+        )
+      }
       return (
         <div className="lp2-context-head lp2-mail-context-head">
           <Input
@@ -561,7 +642,9 @@ export default function AppShell() {
             onChange={(value) => updateMailQuery({ sort: value })}
             options={[{ value: 'time', label: '排序：最新' }, { value: 'star', label: '星标优先' }]}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => updateMailQuery({ refresh: String(Date.now()) })} />
+          <Tooltip title="刷新邮件">
+            <Button icon={<ReloadOutlined />} aria-label="刷新邮件" onClick={() => updateMailQuery({ refresh: String(Date.now()) })} />
+          </Tooltip>
           <Button
             type="primary"
             className="lp2-mail-compose-button"

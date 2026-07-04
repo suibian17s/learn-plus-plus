@@ -1,11 +1,10 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import DOMPurify from 'dompurify'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { List, Tag, Button, Modal, Input, Upload, message, Spin, Space, Typography } from 'antd'
+import { Button, Modal, Input, Upload, message, Spin } from 'antd'
 import {
   CheckCircleOutlined,
-  ClockCircleOutlined,
-  ExclamationCircleOutlined,
   RobotOutlined,
   UploadOutlined,
   ReloadOutlined,
@@ -13,9 +12,6 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import EmptyState from '../components/EmptyState'
-import { formatDateTime } from '../utils/time'
-
-const { Text } = Typography
 
 function urgencyColor(daysLeft: number): string {
   if (daysLeft <= 2) return '#CF1322'
@@ -97,114 +93,61 @@ export default function HomeworkPage() {
     setAttachPath(null)
   }
 
-  function statusTag(hw: any) {
-    if (hw.status === '已批阅') {
-      const gradeText = hw.score ? `${hw.score}分` : hw.gradeLevel
-      return <Tag color="blue">{hw.status} {gradeText ? `(${gradeText})` : ''}</Tag>
-    }
-    if (hw.status === '已提交') return <Tag color="green">{hw.status}</Tag>
-    if (hw.deadline && dayjs(hw.deadline).isBefore(dayjs())) {
-      return <Tag color="red">已截止</Tag>
-    }
-    return <Tag color="orange">未提交</Tag>
-  }
-
-  function renderItem(hw: any, showSubmit: boolean, showAi: boolean) {
+  function renderItem(hw: any, pending: boolean) {
     const daysLeft = hw.deadline ? dayjs(hw.deadline).diff(dayjs(), 'day') : 999
     const dotColor = urgencyColor(daysLeft)
+    const deadlineText = hw.deadline ? dayjs(hw.deadline).format('M月D日 HH:mm') : ''
+    // 成绩过滤异常负值（维护铁律：-60 等无效分数不展示）
+    const validScore = hw.score != null && Number(hw.score) > 0 ? `${hw.score}分` : ''
+    const gradeText = hw.status === '已批阅' ? (validScore || hw.gradeLevel || '') : ''
+    const descText = hw.description ? String(hw.description).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 72) : ''
 
     return (
-      <List.Item
-        className="lp2-card"
-        style={{
-          marginBottom: 10,
-          cursor: 'pointer',
-          opacity: hw.status !== '未提交' ? 0.55 : 1,
-        }}
+      <button
+        key={hw.id}
+        type="button"
+        className={`lp2-hw-row${pending ? '' : ' done'}`}
         onClick={() => navigate(`/course/${courseId}/homework/detail/${hw.id}`, { state: { hw } })}
-        actions={[
-          showSubmit && (
+      >
+        {pending && (
+          <span
+            className="lp2-hw-dot"
+            style={{ background: daysLeft >= 0 ? dotColor : 'transparent' }}
+            aria-hidden="true"
+          />
+        )}
+        <span className="lp2-hw-main">
+          <strong>{hw.title}</strong>
+          <small>
+            {deadlineText && <>截止 {deadlineText}</>}
+            {pending && daysLeft >= 0 && (
+              <em style={{ color: dotColor, fontStyle: 'normal' }}> · 剩余 {daysLeft} 天</em>
+            )}
+            {hw.attachments?.length > 0 && <> · {hw.attachments.length} 个附件</>}
+            {descText && <> · {descText}</>}
+          </small>
+        </span>
+        <span className="lp2-hw-side">
+          {hw.status === '已批阅' ? (
+            <span className="lp2-hw-grade">
+              {gradeText && <strong>{gradeText}</strong>}
+              <small>已批阅</small>
+            </span>
+          ) : hw.status === '已提交' ? (
+            <span className="lp2-hw-state submitted">已提交</span>
+          ) : hw.deadline && dayjs(hw.deadline).isBefore(dayjs()) ? (
+            <span className="lp2-hw-state expired">已截止</span>
+          ) : (
             <Button
-              key="submit"
               type="primary"
-              size="middle"
+              size="small"
               onClick={(e) => { e.stopPropagation(); openSubmit(hw) }}
             >
               提交作业
             </Button>
-          ),
-          showAi && (
-            <Button
-              key="ai"
-              className="lp2-green-button"
-              size="middle"
-              icon={<RobotOutlined />}
-              onClick={(e) => {
-                e.stopPropagation()
-                navigate(`/course/${courseId}/homework/auto`)
-              }}
-            >
-              甘蔗 Tutor
-            </Button>
-          ),
-        ].filter(Boolean)}
-      >
-        <List.Item.Meta
-          avatar={
-            hw.status === '未提交' && daysLeft >= 0 ? (
-              <span style={{
-                display: 'inline-block',
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                backgroundColor: dotColor,
-                marginTop: 6,
-                flexShrink: 0,
-              }} />
-            ) : null
-          }
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 15, fontWeight: 500 }}>{hw.title}</span>
-              {statusTag(hw)}
-            </div>
-          }
-          description={
-            <div>
-              {hw.deadline && (
-                <span style={{ color: dotColor, fontWeight: 500, fontSize: 13 }}>
-                  <ClockCircleOutlined style={{ marginRight: 4 }} />
-                  截止: {formatDateTime(hw.deadline)}
-                  {hw.status === '未提交' && daysLeft >= 0 && (
-                    <span style={{ marginLeft: 4 }}>
-                      (剩余 <Text strong style={{ color: dotColor }}>{daysLeft}</Text> 天)
-                    </span>
-                  )}
-                  {hw.status === '未提交' && daysLeft < 0 && (
-                    <span style={{ marginLeft: 4, color: '#CF1322' }}>(已逾期)</span>
-                  )}
-                </span>
-              )}
-              {hw.description && (
-                <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
-                  {hw.description.replace(/<[^>]+>/g, '').slice(0, 120)}
-                  {(hw.description.length > 120 || hw.attachments?.length > 0) ? '...' : ''}
-                </div>
-              )}
-              {hw.teacherMessage && (
-                <div style={{ color: '#666', fontSize: 12, marginTop: 4 }}>
-                  老师留言: {String(hw.teacherMessage).replace(/<[^>]+>/g, '').slice(0, 120)}
-                </div>
-              )}
-              {hw.attachments?.length > 0 && (
-                <span style={{ fontSize: 12, color: '#660874', marginTop: 2 }}>
-                  📎 {hw.attachments.length} 个附件
-                </span>
-              )}
-            </div>
-          }
-        />
-      </List.Item>
+          )}
+        </span>
+      </button>
     )
   }
 
@@ -230,39 +173,24 @@ export default function HomeworkPage() {
       </div>
 
       {uncompleted.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#333' }}>
-            未完成 ({uncompleted.length})
-          </h3>
-          <List
-            dataSource={uncompleted}
-            renderItem={(hw: any) => renderItem(hw, true, true)}
-          />
-        </div>
+        <section className="lp2-hw-section">
+          <h3 className="lp2-hw-section-title">未完成 · {uncompleted.length}</h3>
+          {uncompleted.map((hw: any) => renderItem(hw, true))}
+        </section>
       )}
 
       {completed.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#333' }}>
-            已完成 ({completed.length})
-          </h3>
-          <List
-            dataSource={completed}
-            renderItem={(hw: any) => renderItem(hw, false, false)}
-          />
-        </div>
+        <section className="lp2-hw-section">
+          <h3 className="lp2-hw-section-title">已完成 · {completed.length}</h3>
+          {completed.map((hw: any) => renderItem(hw, false))}
+        </section>
       )}
 
       {expired.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, color: '#999' }}>
-            已截止 ({expired.length})
-          </h3>
-          <List
-            dataSource={expired}
-            renderItem={(hw: any) => renderItem(hw, false, false)}
-          />
-        </div>
+        <section className="lp2-hw-section">
+          <h3 className="lp2-hw-section-title muted">已截止 · {expired.length}</h3>
+          {expired.map((hw: any) => renderItem(hw, false))}
+        </section>
       )}
 
       <Modal
@@ -287,7 +215,7 @@ export default function HomeworkPage() {
             fontSize: 13,
             lineHeight: 1.6,
           }}
-            dangerouslySetInnerHTML={{ __html: submitTarget.description }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(submitTarget.description) }}
           />
         )}
         {submitTarget?.teacherMessage && (

@@ -78,6 +78,8 @@ async function openDownloadResponse(
         Cookie: cookie,
         'User-Agent': 'learn++',
       },
+      // 连接建立 / 头部响应超时（DNS+TCP+TLS+服务端响应头）
+      timeout: 30000,
     }, (res) => {
       const status = res.statusCode || 0
       const location = res.headers.location
@@ -100,10 +102,26 @@ async function openDownloadResponse(
         return
       }
 
+      // 已收到响应头：清除 request 超时，改在 socket 上设闲置超时
+      // —— 防止连接建立后数据流 hang（服务器静默不发包）时永不失败
+      req.setTimeout(0)
+      const socket = res.socket
+      if (socket) {
+        socket.setKeepAlive(true)
+        socket.setTimeout(120000, () => {
+          req.destroy(new Error('下载连接闲置超时（120s 无数据）'))
+        })
+        socket.once('data', () => socket.setTimeout(0))
+      }
+
       resolve({ res, finalUrl: url })
     })
 
     req.on('error', reject)
+    // 连接/响应头阶段超时（request timeout 触发 'timeout' 事件，需手动 destroy）
+    req.on('timeout', () => {
+      req.destroy(new Error('下载请求超时（30s 无响应）'))
+    })
     req.end()
   })
 }
@@ -114,10 +132,19 @@ export async function downloadUrlToBuffer(url: string): Promise<Buffer> {
     throw new AuthError('Cookie expired, re-authenticating')
   }
 
+  const total = getHeaderNumber(res.headers['content-length'])
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
-    res.on('end', () => resolve(Buffer.concat(chunks)))
+    let loaded = 0
+    res.on('data', (chunk: Buffer) => { chunks.push(Buffer.from(chunk)); loaded += chunk.byteLength })
+    res.on('end', () => {
+      // 完整性校验：Content-Length 存在但收到字节偏少 = 传输被截断
+      if (total > 0 && loaded < total) {
+        reject(new Error(`下载不完整（${loaded}/${total} 字节），可能网络中断，请重试`))
+        return
+      }
+      resolve(Buffer.concat(chunks))
+    })
     res.on('error', reject)
   })
 }
@@ -128,13 +155,21 @@ export async function downloadUrlToBufferWithMeta(url: string): Promise<{ buffer
     throw new AuthError('Cookie expired, re-authenticating')
   }
 
+  const total = getHeaderNumber(res.headers['content-length'])
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
-    res.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
-    res.on('end', () => resolve({
-      buffer: Buffer.concat(chunks),
-      contentType: getHeaderString(res.headers['content-type']),
-    }))
+    let loaded = 0
+    res.on('data', (chunk: Buffer) => { chunks.push(Buffer.from(chunk)); loaded += chunk.byteLength })
+    res.on('end', () => {
+      if (total > 0 && loaded < total) {
+        reject(new Error(`下载不完整（${loaded}/${total} 字节），可能网络中断，请重试`))
+        return
+      }
+      resolve({
+        buffer: Buffer.concat(chunks),
+        contentType: getHeaderString(res.headers['content-type']),
+      })
+    })
     res.on('error', reject)
   })
 }
@@ -190,6 +225,18 @@ export async function downloadFile(
     res.on('error', fail)
     writer.on('error', fail)
     writer.on('finish', () => {
+      // 完整性校验：Content-Length 存在但写入字节偏少 = 传输被截断，删除坏文件并报错
+      if (total > 0 && loaded < total) {
+        try { fs.unlinkSync(destPath) } catch { /* ignore */ }
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('files:progress', {
+            id: downloadId, fileName: finalFileName,
+            loaded, total, status: 'error' as const,
+          })
+        }
+        reject(new Error(`下载不完整（${loaded}/${total} 字节），可能网络中断，请重试`))
+        return
+      }
       if (win && !win.isDestroyed()) {
         win.webContents.send('files:progress', {
           fileName: finalFileName,

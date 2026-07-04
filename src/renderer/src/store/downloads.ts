@@ -4,6 +4,8 @@ import { persist } from 'zustand/middleware'
 export interface DownloadItem {
   id: string
   fileName: string
+  courseId?: string
+  fileId?: string
   loaded: number
   total: number
   status: 'downloading' | 'completed' | 'error'

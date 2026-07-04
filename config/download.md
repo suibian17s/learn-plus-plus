@@ -23,3 +23,20 @@
 ## 注意事项
 
 如果后续发现某些文件扩展名仍不正确，优先检查网络学堂返回的 `fileType` 和下载响应头里的文件名是否缺失或异常。
+
+
+---
+
+## 2026-07-04 下载完整性校验（修复大文件静默截断）
+
+### 背景
+上一批 Tutor 优化时发现某 107MB 课件 pptx 缺 zip EOCD 签名（损坏），怀疑 downloader 截断大文件。审查 downloader.ts 确认真实缺陷。
+
+### 根因
+downloadFile / downloadUrlToBuffer / downloadUrlToBufferWithMeta 三个函数都**未校验实际下载字节数 == Content-Length**。当大文件传输中途被截断、但 HTTP 响应以 'end' 而非 'error' 结束时（网络抖动、服务器/代理超时常见），pipe 正常 finish，写出不完整文件却标记为 completed → 用户得到打不开的坏文件。
+
+### 修复
+三个函数在 end/finish 时校验：`Content-Length > 0 且 loaded < total` 判定为截断 —— downloadFile 删除坏文件并发 error 进度；buffer 版 reject。无 Content-Length（chunked）时 total=0 跳过校验避免误判。截断从"静默产出坏文件"变为"下载失败可重试"。
+
+### 遗留
+未加下载超时（连接 hang 时不会自动失败）。如后续遇到大文件下载卡死，可在 openDownloadResponse 加 socket timeout。

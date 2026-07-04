@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { withAuth } from '../services/learn'
 import { formatError } from '../utils/errors'
+import { indexCourses } from '../services/search-index'
 import { CourseType } from 'thu-learn-lib'
 
 /**
@@ -36,12 +37,17 @@ export function registerCoursesIpc(): void {
     try {
       return await withAuth(async (h) => {
         const courses = await h.getCourseList(semesterId, CourseType.STUDENT)
-        return courses.map((c) => ({
+        const mapped = courses.map((c) => ({
           id: c.id,
           name: c.chineseName || c.name,
           teacher: c.teacherName || '',
           semester: semesterId,
         }))
+        // Feed courses into the global search index
+        if (mapped.length > 0) {
+          indexCourses(mapped.map((c) => ({ id: c.id, name: c.name, teacher: c.teacher })))
+        }
+        return mapped
       })
     } catch (err) {
       return { error: formatError(err) }

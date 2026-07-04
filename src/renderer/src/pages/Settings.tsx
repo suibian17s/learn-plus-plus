@@ -163,6 +163,11 @@ export default function SettingsPage() {
     else message.error('连接失败')
   }
 
+  async function handleMailLogout() {
+    await window.learn.mail.logout()
+    message.success('已退出邮箱登录')
+  }
+
   async function handleResetRisk() {
     await window.learn.settings.set({ aiAutoCompleteAcknowledged: false })
     message.success('甘蔗 tutor 承诺书已重置')
@@ -213,7 +218,7 @@ export default function SettingsPage() {
               onChange={handleSemesterChange}
               placeholder="选择学期"
               style={{ maxWidth: 320 }}
-              options={(localSemesters.length ? localSemesters : semesters).map((s) => ({ value: s.id, label: s.name }))}
+              options={(semesters.length ? semesters : localSemesters).map((s) => ({ value: s.id, label: s.name }))}
             />
           </Form.Item>
           <div style={{ color: '#888', fontSize: 13 }}>
@@ -280,6 +285,7 @@ export default function SettingsPage() {
           <Form.Item>
             <Button onClick={handleTestMailConnection}>测试连接</Button>
             <Button type="primary" onClick={handleLoginImap} style={{ marginLeft: 8 }}>登录邮箱</Button>
+            <Button danger style={{ marginLeft: 8 }} onClick={handleMailLogout}>退出邮箱</Button>
           </Form.Item>
         </Card>
 

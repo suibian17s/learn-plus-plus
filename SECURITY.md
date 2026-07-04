@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The current public release line is `v1.1.x`.
+The current public release line is `v1.1.x`. Version `v2.0.0` is under active development and has not been released; known security-relevant issues in the development branch are tracked in `HANDOVER.md` (items B6, B7, B11).
 
 ## Sensitive Data
 

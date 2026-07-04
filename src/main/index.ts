@@ -12,6 +12,7 @@ import { registerAiIpc } from './ipc/ai'
 import { registerAppIpc } from './ipc/app'
 import { registerStatsIpc } from './ipc/stats'
 import { registerMailIpc } from './ipc/mail'
+import { registerFocusIpc } from './ipc/focus'
 import { loadCreds } from './services/session-store'
 import {
   login,
@@ -21,7 +22,14 @@ import {
   restoreApiSessionFromDisk,
   setCachedCreds,
 } from './services/learn'
-import { startTracking, pauseTracking, resumeTracking, stopTracking } from './services/stats'
+import { startTracking, pauseTracking, resumeTracking, stopTracking, setWindowVisible } from './services/stats'
+import { cleanupMailTemp } from './services/mail-imap'
+
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
 
 const isDev = !app.isPackaged
 const startHidden = process.argv.includes('--hidden') || process.argv.includes('--background')
@@ -52,6 +60,7 @@ function showMainWindow(): void {
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
   notifyRendererResume(mainWindow)
+  setWindowVisible(true)
   resumeTracking()
   hiddenAt = null
 }
@@ -131,6 +140,7 @@ function createWindow(): BrowserWindow {
     if (isQuitting) return
     event.preventDefault()
     hiddenAt = Date.now()
+    setWindowVisible(false)
     pauseTracking()
     win.hide()
   })
@@ -234,16 +244,35 @@ app.whenReady().then(async () => {
   registerAppIpc()
   registerStatsIpc()
   registerMailIpc()
+  registerFocusIpc()
+
+  cleanupMailTemp()
 
   mainWindow = createWindow()
   createTray()
 
   startSessionKeepAlive()
 
+  // Mail auto-connect is handled by the Mailbox page when user visits it
+
   tryAutoLogin().then((loggedIn) => {
     if (loggedIn) startTracking()
-    mainWindow?.webContents.send('auto-login-result', loggedIn)
+    // Defer send until renderer has finished loading to avoid race condition
+    // where the event fires before the renderer's listener is registered.
+    const send = () => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+      mainWindow.webContents.send('auto-login-result', loggedIn)
+    }
+    if (mainWindow?.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', send)
+    } else {
+      send()
+    }
   })
+})
+
+app.on('second-instance', () => {
+  showMainWindow()
 })
 
 app.on('before-quit', () => {

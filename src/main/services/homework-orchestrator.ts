@@ -37,6 +37,27 @@ export interface OrchestrateResult {
   styleProfile: StyleProfile | null
 }
 
+// ── Concurrency limiter ──
+
+async function runSubAgentsWithLimit<T>(
+  tasks: (() => Promise<T>)[],
+  limit: number,
+): Promise<T[]> {
+  if (tasks.length === 0) return []
+  const results: T[] = new Array(tasks.length)
+  let cursor = 0
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+      while (true) {
+        const i = cursor++
+        if (i >= tasks.length) break
+        results[i] = await tasks[i]()
+      }
+    })
+  )
+  return results
+}
+
 export async function orchestrate(req: OrchestrateRequest): Promise<OrchestrateResult> {
   const { analyzed, signal, onProgress } = req
 
@@ -65,9 +86,9 @@ export async function orchestrate(req: OrchestrateRequest): Promise<OrchestrateR
     })
   }
 
-  // Phase 4: Parallel sub-agents
-  const subResults: SubAgentOutput[] = await Promise.all(
-    questions.map(async (q) => {
+  // Phase 4: Parallel sub-agents (concurrency-limited)
+  const subResults: SubAgentOutput[] = await runSubAgentsWithLimit(
+    questions.map((q) => async () => {
       if (signal?.aborted) throw new Error('Aborted')
       onProgress({ phase: { type: 'generating', current: q.index, total: questions.length }, detail: `生成第 ${q.index}/${questions.length} 部分...` })
       return runSubAgent({
@@ -79,8 +100,10 @@ export async function orchestrate(req: OrchestrateRequest): Promise<OrchestrateR
         courseName: analyzed.hw.courseName || '',
         homeworkTitle: analyzed.hw.title || '',
         type: analyzed.type,
+        signal,
       })
-    })
+    }),
+    3,
   )
 
   // Sort by index
@@ -100,6 +123,7 @@ export async function orchestrate(req: OrchestrateRequest): Promise<OrchestrateR
       assembledContent: assembled,
       coursewareUsed: coursewareText,
       styleGuide,
+      signal,
     })
   } catch { /* best-effort */ }
 
@@ -171,6 +195,7 @@ async function decomposeHomework(
 
 作业标题：${analyzed.hw.title || ''}
 作业描述：${analyzed.hw.description || ''}
+${coursewareText ? `\n参考课件内容：\n${coursewareText.slice(0, 6000)}` : ''}
 
 如果可以拆分，请返回严格的 JSON 数组（不要包含 markdown 代码块标记）：
 [
@@ -187,6 +212,7 @@ async function decomposeHomework(
       system: '你是一个作业分析助手。只返回 JSON 数组，不写任何其他文字。无法拆分就返回 []。',
       messages: [{ role: 'user', content: prompt }],
       maxTokens: 2000,
+      signal,
     })
     const trimmed = raw.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
     const parsed = JSON.parse(trimmed)
@@ -230,6 +256,7 @@ ${parts}`
       system: '你是作业格式整理助手。只做格式统一，不改变内容。直接输出整理后的完整答案，不要写任何解释性文字。',
       messages: [{ role: 'user', content: prompt }],
       maxTokens: 6000,
+      signal,
     })
     return assembled
   } catch {

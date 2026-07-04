@@ -15,19 +15,21 @@ export default function AllCoursesPage() {
     ;(async () => {
       setLoading(true)
       const items: any[] = []
-      for (const c of courses) {
-        try {
-          const hws = await window.learn.hw.list(c.id)
-          if (hws.length === 0) {
-            items.push({ courseId: c.id, courseName: c.name, teacher: c.teacher, done: 0, total: 0, percent: 100 })
-          } else {
-            const done = hws.filter((h: any) => h.status === '已提交' || h.status === '已批阅' || h.submitted === true).length
-            items.push({ courseId: c.id, courseName: c.name, teacher: c.teacher, done, total: hws.length, percent: Math.round((done / hws.length) * 100) })
-          }
-        } catch {
-          items.push({ courseId: c.id, courseName: c.name, teacher: c.teacher, done: 0, total: 0, percent: 100 })
+      // 复用主进程 dashboard 快照（缓存命中毫秒级），不再逐课串行拉取
+      try {
+        const snapshot: any = await window.learn.stats.refreshDashboard({ courses })
+        const teacherById = new Map(courses.map((c) => [c.id, c.teacher]))
+        for (const cp of snapshot?.courseProgress || []) {
+          items.push({
+            courseId: cp.courseId,
+            courseName: cp.courseName,
+            teacher: teacherById.get(cp.courseId) || '',
+            done: cp.done,
+            total: cp.total,
+            percent: cp.total > 0 ? cp.percent : 100,
+          })
         }
-      }
+      } catch { /* ignore */ }
       items.sort((a, b) => { if (a.total === 0 && b.total > 0) return 1; if (b.total === 0 && a.total > 0) return -1; return a.courseName.localeCompare(b.courseName, 'zh') })
       if (!cancelled) { setProgress(items); setLoading(false) }
     })()

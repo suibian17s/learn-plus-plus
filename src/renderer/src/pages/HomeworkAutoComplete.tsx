@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Card, Button, Tag, Badge, Spin, Alert, Modal, Input, message, Space } from 'antd'
+import { Card, Button, Tag, Spin, Alert, Modal, message, Space } from 'antd'
 import {
   RobotOutlined,
-  ClockCircleOutlined,
   ExclamationCircleOutlined,
   CheckCircleOutlined,
   WarningOutlined,
@@ -14,8 +13,6 @@ import { useAiStore } from '../store/ai'
 import RiskDisclaimerModal from '../components/RiskDisclaimerModal'
 import HomeworkPreview from '../components/HomeworkPreview'
 import EmptyState from '../components/EmptyState'
-import MarkdownRenderer from '../components/MarkdownRenderer'
-import { formatDateTime } from '../utils/time'
 
 const TYPE_LABELS: Record<string, { text: string; color: string }> = {
   text: { text: '文本简答', color: 'blue' },
@@ -54,11 +51,6 @@ export default function HomeworkAutoComplete() {
   const [sessionId] = useState(() => `session-${Date.now()}`)
   const [submitModal, setSubmitModal] = useState(false)
   const [codeVerified, setCodeVerified] = useState(false)
-  const [tutorModal, setTutorModal] = useState(false)
-  const [tutorLoading, setTutorLoading] = useState(false)
-  const [tutorTitle, setTutorTitle] = useState('')
-  const [tutorOutput, setTutorOutput] = useState('')
-  const [tutorQuestion, setTutorQuestion] = useState('')
   const [orchestratePhase, setOrchestratePhase] = useState<string>('')
   const [reviewOutput, setReviewOutput] = useState<any>(null)
   const [styleProfile, setStyleProfile] = useState<any>(null)
@@ -128,8 +120,8 @@ export default function HomeworkAutoComplete() {
         setStyleFallback(true)
       }
 
-      // Build attachment if applicable
-      if (analysis.suggestedOutputs?.includes('docx')) {
+      // 附件优先：除代码作业外一律生成 DOCX 附件（提交时以附件为主体，不再把全文塞进文本框）
+      if (analysis.type !== 'code') {
         const ar = await window.learn.hwai.buildAttachment(
           { kind: 'docx', filename: `${hw.title || 'homework'}.docx` },
           orchResult.contentMarkdown,
@@ -196,81 +188,32 @@ export default function HomeworkAutoComplete() {
   async function handleSubmit() {
     if (!selectedHw || !draft) return
     try {
-      const result = await window.learn.hw.submit(selectedHw.studentHomeworkId, draft, attachmentPath || undefined)
+      // 附件优先提交：正文编辑过或附件缺失时，用最新草稿重建 DOCX
+      let attach = attachmentPath
+      if (analyzed?.type !== 'code' && (edited || !attach)) {
+        try {
+          const ar = await window.learn.hwai.buildAttachment(
+            { kind: 'docx', filename: `${selectedHw.title || 'homework'}.docx` },
+            draft,
+          )
+          if (ar.tempPath) {
+            attach = ar.tempPath
+            setAttachmentPath(ar.tempPath)
+          }
+        } catch { /* 附件构建失败则退回文本提交 */ }
+      }
+      // 有附件时文本框只留说明，作业主体在附件里（符合常规提交习惯）
+      const contentText = attach ? '详见附件。' : draft
+      const result = await window.learn.hw.submit(selectedHw.studentHomeworkId, contentText, attach || undefined)
       if (!result.ok) {
         message.error(`提交失败: ${result.error || '未知错误'}`)
         return
       }
-      message.success('提交成功！建议到网页学堂确认提交内容。')
+      message.success(attach ? '已提交（正文为 DOCX 附件）。建议到网页学堂确认。' : '提交成功！建议到网页学堂确认提交内容。')
       setSubmitModal(false)
       setView('scan')
     } catch (err) {
       message.error(`提交失败: ${err}`)
-    }
-  }
-
-  async function runTutorSummary(kind: 'notifications' | 'files' | 'discussion') {
-    if (!courseId) return
-    const titleMap = {
-      notifications: '公告总结',
-      files: '课件学习路径',
-      discussion: '讨论总结',
-    }
-    setTutorTitle(titleMap[kind])
-    setTutorOutput('')
-    setTutorModal(true)
-    setTutorLoading(true)
-    const sessionId = `homework-summary-${Date.now()}`
-    const unsubChunk = window.learn.hwai.onChunk((data) => {
-      if (data.sessionId === sessionId && data.delta) {
-        setTutorOutput((prev) => prev + data.delta)
-      }
-    })
-    const unsubEnd = window.learn.hwai.onEnd((data) => {
-      if (data.sessionId === sessionId) setTutorLoading(false)
-    })
-    try {
-      const result = await window.learn.hwai.tutorSummary(courseId, kind, sessionId)
-      if (!result.ok) {
-        message.error(result.error || '甘蔗 tutor 处理失败')
-        setTutorOutput(result.error || '')
-        return
-      }
-      setTutorOutput((prev) => prev || result.content || '')
-    } finally {
-      unsubChunk()
-      unsubEnd()
-      setTutorLoading(false)
-    }
-  }
-
-  async function askTutorQuestion() {
-    if (!courseId || !tutorQuestion.trim()) return
-    setTutorTitle('作业答疑')
-    setTutorOutput('')
-    setTutorModal(true)
-    setTutorLoading(true)
-    const sessionId = `homework-ask-${Date.now()}`
-    const unsubChunk = window.learn.hwai.onChunk((data) => {
-      if (data.sessionId === sessionId && data.delta) {
-        setTutorOutput((prev) => prev + data.delta)
-      }
-    })
-    const unsubEnd = window.learn.hwai.onEnd((data) => {
-      if (data.sessionId === sessionId) setTutorLoading(false)
-    })
-    try {
-      const result = await window.learn.hwai.tutorAsk(courseId, tutorQuestion.trim(), sessionId)
-      if (!result.ok) {
-        message.error(result.error || '甘蔗 tutor 处理失败')
-        setTutorOutput(result.error || '')
-        return
-      }
-      setTutorOutput((prev) => prev || result.content || '')
-    } finally {
-      unsubChunk()
-      unsubEnd()
-      setTutorLoading(false)
     }
   }
 
@@ -312,96 +255,50 @@ export default function HomeworkAutoComplete() {
 
       {view === 'scan' && (
         <>
-          <Card
-            size="small"
-            style={{ marginBottom: 16, borderColor: '#B7EB8F', background: '#FCFFFA' }}
-            title={
-              <Space>
-                <RobotOutlined style={{ color: '#52C41A' }} />
-                <span>甘蔗 tutor</span>
-                <Tag color="green">全栈式 AI 辅助学习助手</Tag>
-              </Space>
-            }
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-              <Button onClick={() => runTutorSummary('notifications')}>总结公告</Button>
-              <Button onClick={() => runTutorSummary('files')}>总结课件</Button>
-              <Button onClick={() => runTutorSummary('discussion')}>讨论总结</Button>
-              <Button danger onClick={() => setShowRiskModal(true)}>一键自动完成作业</Button>
-            </div>
-            <Input.Search
-              placeholder="向甘蔗 tutor 提问：例如这门课最近有哪些作业要优先处理？"
-              enterButton="作业答疑"
-              value={tutorQuestion}
-              onChange={(e) => setTutorQuestion(e.target.value)}
-              onSearch={askTutorQuestion}
-              style={{ marginTop: 12 }}
-            />
-          </Card>
-
-          <h3 style={{ marginBottom: 16, fontSize: 16, fontWeight: 600 }}>
-            选择要自动生成草稿的作业
-            <span style={{ fontSize: 13, fontWeight: 400, color: '#888', marginLeft: 12 }}>
-              高风险能力，仅显示未提交作业
-            </span>
-          </h3>
+          <div className="lp2-hwauto-head">
+            <h3>选择要自动生成草稿的作业</h3>
+            <p>高风险能力 · 仅显示未提交作业 · 草稿会生成 DOCX 附件，提交前请务必通读并修改</p>
+          </div>
 
           {!scanList?.length ? (
             <EmptyState description="所有作业已提交，没有需要 AI 协助的" />
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14 }}>
+            <div className="lp2-hwauto-grid">
               {(scanList || []).map((hw: ScanItem) => {
                 const typeInfo = TYPE_LABELS[hw.type] || TYPE_LABELS.unknown
                 const isManual = hw.type === 'ppt' || hw.type === 'unknown'
                 const daysLeft = hw.deadline ? dayjs(hw.deadline).diff(dayjs(), 'day') : null
+                const overdue = daysLeft !== null && daysLeft < 0
+                const urgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 2
 
                 return (
-                  <Card
-                    key={hw.homeworkId}
-                    size="small"
-                    hoverable={!isManual}
-                    style={{
-                      borderRadius: 8,
-                      opacity: isManual ? 0.6 : 1,
-                    }}
-                    title={
-                      <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'normal' }}>
-                        {hw.title}
-                      </div>
-                    }
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <div key={hw.homeworkId} className={`lp2-hwauto-card${isManual ? ' manual' : ''}`}>
+                    <strong className="lp2-hwauto-title">{hw.title}</strong>
+                    <div className="lp2-hwauto-meta">
                       <Tag color={typeInfo.color}>{typeInfo.text}</Tag>
-                      <Tag>{hw.courseName}</Tag>
+                      {hw.deadline && (
+                        <span className={`lp2-hwauto-deadline${urgent ? ' urgent' : ''}`}>
+                          {dayjs(hw.deadline).format('M月D日 HH:mm')} 截止
+                          {overdue ? ' · 已逾期' : daysLeft !== null ? ` · 剩余 ${daysLeft} 天` : ''}
+                        </span>
+                      )}
                     </div>
-
-                    {hw.deadline && (
-                      <div style={{
-                        color: daysLeft !== null && daysLeft < 0 ? '#CF1322' : daysLeft !== null && daysLeft <= 2 ? '#FA8C16' : '#52C41A',
-                        fontSize: 13,
-                        fontWeight: 500,
-                        marginBottom: 12,
-                      }}>
-                        <ClockCircleOutlined style={{ marginRight: 4 }} />
-                        截止: {formatDateTime(hw.deadline)}
-                        {daysLeft !== null && daysLeft >= 0 && ` (剩余 ${daysLeft} 天)`}
-                        {daysLeft !== null && daysLeft < 0 && ' (已逾期)'}
-                      </div>
+                    {isManual && (
+                      <p className="lp2-hwauto-manual-note">
+                        {hw.type === 'ppt' ? 'PPT 汇报不自动生成，仅提供大纲建议' : '无法识别作业类型，建议手动完成'}
+                      </p>
                     )}
-
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="lp2-hwauto-actions">
                       <Button
                         type="primary"
                         icon={<RobotOutlined />}
                         disabled={isManual}
                         onClick={() => handleSelect(hw)}
-                        style={{ flex: 1 }}
-                        size="small"
                       >
                         自动生成
                       </Button>
                       <Button
-                        size="small"
+                        type="text"
                         onClick={() => window.learn.openExternal(
                           `https://learn.tsinghua.edu.cn/f/wlxt/homework/detail/${hw.homeworkId}`
                         )}
@@ -409,15 +306,7 @@ export default function HomeworkAutoComplete() {
                         打开原页面
                       </Button>
                     </div>
-
-                    {isManual && (
-                      <div style={{ color: '#FA8C16', fontSize: 12, marginTop: 8 }}>
-                        {hw.type === 'ppt'
-                          ? 'PPT 汇报 v1 不自动生成，仅提供大纲建议'
-                          : '无法识别作业类型，建议手动完成'}
-                      </div>
-                    )}
-                  </Card>
+                  </div>
                 )
               })}
             </div>
@@ -615,31 +504,6 @@ export default function HomeworkAutoComplete() {
         </div>
       )}
 
-      <Modal
-        title={<Space><RobotOutlined style={{ color: '#52C41A' }} />甘蔗 tutor · {tutorTitle}</Space>}
-        open={tutorModal}
-        onCancel={() => setTutorModal(false)}
-        footer={<Button onClick={() => setTutorModal(false)}>关闭</Button>}
-        width={760}
-      >
-        {tutorLoading && !tutorOutput ? (
-          <div style={{ padding: 48, textAlign: 'center' }}>
-            <Spin />
-            <div style={{ marginTop: 12, color: '#888' }}>甘蔗 tutor 正在整理...</div>
-          </div>
-        ) : (
-          <div style={{
-            maxHeight: '60vh',
-            overflow: 'auto',
-            background: '#fafafa',
-            border: '1px solid #f0f0f0',
-            borderRadius: 8,
-            padding: 16,
-          }}>
-            <MarkdownRenderer content={tutorOutput || '暂无内容'} />
-          </div>
-        )}
-      </Modal>
     </div>
   )
 }

@@ -22,20 +22,21 @@ const api = {
   },
   files: {
     list: (courseId: string) => ipcRenderer.invoke('files:list', courseId),
-    download: (fileId: string, fileName: string, url: string) =>
-      ipcRenderer.invoke('files:download', fileId, fileName, url),
+    download: (courseId: string, fileId: string, fileName: string, url: string) =>
+      ipcRenderer.invoke('files:download', courseId, fileId, fileName, url),
     openFolder: (filePath: string) => ipcRenderer.invoke('files:openFolder', filePath),
     openFile: (filePath: string) => ipcRenderer.invoke('files:openFile', filePath),
     previewWindow: (filePath: string, fileName: string) =>
       ipcRenderer.invoke('files:previewWindow', filePath, fileName),
     selectDirectory: () => ipcRenderer.invoke('files:selectDirectory'),
     exists: (filePath: string) => ipcRenderer.invoke('files:exists', filePath),
-    downloadState: (fileName: string) => ipcRenderer.invoke('files:downloadState', fileName),
+    downloadState: (arg1: string, arg2?: string, arg3?: string) =>
+      ipcRenderer.invoke('files:downloadState', arg1, arg2, arg3),
     preview: (fileId: string, fileName: string, url: string) =>
       ipcRenderer.invoke('files:preview', fileId, fileName, url),
     previewOpen: (fileId: string, fileName: string, url: string) =>
       ipcRenderer.invoke('files:previewOpen', fileId, fileName, url),
-    batchDownload: (items: { fileId: string; fileName: string; url: string }[]) =>
+    batchDownload: (items: { courseId: string; fileId: string; fileName: string; url: string }[]) =>
       ipcRenderer.invoke('files:batchDownload', items),
     onProgress: (cb: (data: any) => void) => {
       const handler = (_e: any, data: any) => cb(data)
@@ -48,8 +49,8 @@ const api = {
     submit: (studentHomeworkId: string, content: string, attachmentPath?: string, removeOld?: boolean) =>
       ipcRenderer.invoke('hw:submit', studentHomeworkId, content, attachmentPath, removeOld),
     selectFile: () => ipcRenderer.invoke('hw:selectFile') as Promise<{ path: string; name: string; size: number; error?: string } | null>,
-    downloadAttachment: (url: string, fileName: string) =>
-      ipcRenderer.invoke('hw:downloadAttachment', url, fileName),
+    downloadAttachment: (url: string, fileName: string, courseId?: string) =>
+      ipcRenderer.invoke('hw:downloadAttachment', url, fileName, courseId),
   },
   disc: {
     list: (courseId: string) => ipcRenderer.invoke('disc:list', courseId),
@@ -77,9 +78,10 @@ const api = {
     abort: (sessionId: string) => ipcRenderer.invoke('hwai:abort', sessionId),
     hasAcknowledgedRisk: () => ipcRenderer.invoke('hwai:has-acknowledged-risk'),
     acknowledgeRisk: () => ipcRenderer.invoke('hwai:acknowledge-risk'),
-    tutorChat: (params: { messages: { role: string; content: string }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string }) =>
+    tutorChat: (params: { messages: { role: string; content: string; images?: string[] }[]; courseId?: string; style?: 'cute' | 'serious'; sessionId: string; pageContext?: { label?: string; courseId?: string; courseName?: string; itemTitle?: string; itemExcerpt?: string } }) =>
       ipcRenderer.invoke('tutor:chat', params),
     tutorAbort: (sessionId: string) => ipcRenderer.invoke('tutor:abort', sessionId),
+    draftMail: (params: { purpose: string; subject?: string }) => ipcRenderer.invoke('hwai:draft-mail', params),
     onChunk: (cb: (data: { sessionId: string; delta?: string; type?: string; call?: any; name?: string; result?: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data)
       ipcRenderer.on('hwai:generate-chunk', handler)
@@ -92,6 +94,8 @@ const api = {
     },
     summarizeFile: (file: { name: string; url: string; fileType?: string }) =>
       ipcRenderer.invoke('hwai:summarize-file', file),
+    fileChat: (req: { file: { name: string; url: string; fileType?: string }; question: string; history: { role: 'user' | 'assistant'; content: string }[]; sessionId?: string }) =>
+      ipcRenderer.invoke('hwai:file-chat', req),
     healthCheck: () => ipcRenderer.invoke('hwai:health-check'),
     orchestrate: (params: any) => ipcRenderer.invoke('hwai:orchestrate', params),
     onOrchestrateChunk: (cb: any) => {
@@ -113,6 +117,18 @@ const api = {
   },
   stats: {
     computeDashboard: (payload: any) => ipcRenderer.invoke('stats:computeDashboard', payload),
+    refreshDashboard: (payload: any) => ipcRenderer.invoke('stats:refreshDashboard', payload),
+    onUpdated: (cb: (data: any) => void) => {
+      const handler = (_e: any, data: any) => cb(data)
+      ipcRenderer.on('stats:updated', handler)
+      return () => ipcRenderer.removeListener('stats:updated', handler)
+    },
+  },
+  focus: {
+    add: (item: { id: string; type: 'email'; title: string; description: string; createdAt: string; mailId: string }) =>
+      ipcRenderer.invoke('focus:add', item),
+    remove: (id: string) => ipcRenderer.invoke('focus:remove', id),
+    list: () => ipcRenderer.invoke('focus:list'),
   },
   search: {
     query: (q: string, typeFilter?: string) => ipcRenderer.invoke('search:query', q, typeFilter),
@@ -120,30 +136,29 @@ const api = {
       ipcRenderer.invoke('search:indexItems', type, items, targetTab),
   },
   mail: {
-    login: () => ipcRenderer.invoke('mail:login'),
     loginImap: (config: any) => ipcRenderer.invoke('mail:login-imap', config),
     testConnection: (config: any) => ipcRenderer.invoke('mail:test-connection', config),
     status: () => ipcRenderer.invoke('mail:status'),
     check: () => ipcRenderer.invoke('mail:check'),
-    list: (folder: string) => ipcRenderer.invoke('mail:list', folder),
-    get: (mailId: string) => ipcRenderer.invoke('mail:get', mailId),
+    list: (folder: string, force?: boolean) => ipcRenderer.invoke('mail:list', folder, force),
+    search: (query: string, folder?: string) =>
+      ipcRenderer.invoke('mail:search', query, folder),
+    get: (mailId: string, folder?: string) => ipcRenderer.invoke('mail:get', mailId, folder),
     star: (mailId: string, starred: boolean) =>
       ipcRenderer.invoke('mail:star', mailId, starred),
-    delete: (mailId: string) => ipcRenderer.invoke('mail:delete', mailId),
+    delete: (mailId: string, currentFolder?: string) =>
+      ipcRenderer.invoke('mail:delete', mailId, currentFolder),
     logout: () => ipcRenderer.invoke('mail:logout'),
-    show: () => ipcRenderer.invoke('mail:show'),
     compose: (params: { to: string; subject: string; body: string }) =>
       ipcRenderer.invoke('mail:compose', params),
+    saveAttachment: (tempPath: string, fileName: string) =>
+      ipcRenderer.invoke('mail:save-attachment', tempPath, fileName),
   },
   app: {
     info: () => ipcRenderer.invoke('app:info'),
     checkForUpdates: () => ipcRenderer.invoke('app:check-updates'),
-    controlWindow: (command: 'minimize' | 'toggle-maximize' | 'close') =>
+    controlWindow: (command: 'minimize' | 'toggle-maximize' | 'close' | 'quit') =>
       ipcRenderer.send('window:command', command),
-    minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
-    toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),
-    closeWindow: () => ipcRenderer.invoke('window:close'),
-    quitWindow: () => ipcRenderer.invoke('window:quit'),
     onResume: (cb: () => void) => {
       const handler = () => cb()
       ipcRenderer.on('app:resume', handler)

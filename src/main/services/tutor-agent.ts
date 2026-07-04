@@ -32,7 +32,7 @@ export const TOOLS = [
     type: 'function' as const,
     function: {
       name: 'list_homeworks',
-      description: '列出某课程的所有作业',
+      description: '列出某课程的所有作业，含提交状态、得分/等级、批阅评语与批阅人',
       parameters: {
         type: 'object',
         properties: { courseId: { type: 'string', description: '课程ID' } },
@@ -161,6 +161,105 @@ export const TOOLS = [
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_file_content',
+      description: '下载并解析某课件的全文内容（支持 PDF/PPT/DOCX/TXT），用于讲解课件、基于课件出题或回答课件相关问题',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseId: { type: 'string', description: '课程ID' },
+          fileId: { type: 'string', description: '课件ID（来自 list_files 结果）' },
+        },
+        required: ['courseId', 'fileId'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_homework_detail',
+      description: '获取某作业的完整信息：要求全文、附件解析文本、截止时间与提交状态',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseId: { type: 'string', description: '课程ID' },
+          homeworkId: { type: 'string', description: '作业ID（来自 list_homeworks 结果）' },
+        },
+        required: ['courseId', 'homeworkId'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_notice_detail',
+      description: '获取某公告的全文内容',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseId: { type: 'string', description: '课程ID' },
+          noticeId: { type: 'string', description: '公告ID（来自 list_notices 结果）' },
+        },
+        required: ['courseId', 'noticeId'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'list_deadlines',
+      description: '获取全部课程的待办与截止日期快照（毫秒级返回，回答"我最近/本周要交什么"必用）',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'add_focus_item',
+      description: '把一个任务加入用户首页的"今日重点"列表',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '任务标题' },
+          description: { type: 'string', description: '来源或补充说明（可选）' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'draft_mail',
+      description: '为用户起草一封邮件正文（只生成草稿文本返回给用户，绝不会实际发送）',
+      parameters: {
+        type: 'object',
+        properties: {
+          purpose: { type: 'string', description: '邮件目的与要点，例如"向张老师请假，周三有病假条"' },
+          tone: { type: 'string', description: '语气：正式/客气/简洁（可选）' },
+        },
+        required: ['purpose'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'navigate_to',
+      description: '在回答中给用户一张可点击的跳转卡片。涉及具体课程/作业/课件/邮件时主动使用',
+      parameters: {
+        type: 'object',
+        properties: {
+          label: { type: 'string', description: '卡片显示文字，例如"经济学原理 · 作业"' },
+          courseId: { type: 'string', description: '课程ID（跳转课程页时必填）' },
+          tab: { type: 'string', description: 'notifications/files/homework/discussion/questionnaire，或 mailbox/home' },
+        },
+        required: ['label', 'tab'],
+      },
+    },
+  },
 ]
 
 // ── AI response parser ──
@@ -218,6 +317,7 @@ export async function runAgentLoop(params: {
   messages: AiMessage[]
   style: 'cute' | 'serious'
   courseContext?: { name: string; teacher: string }
+  pageContext?: import('./tutor-prompts').TutorPageContext
   sessionId: string
   signal?: AbortSignal
   onChunk: AgentChunkCallback
@@ -230,12 +330,12 @@ export async function runAgentLoop(params: {
     onChunk?: (delta: string) => void
   }) => Promise<{ content: string; toolCalls?: ToolCall[] }>
 }): Promise<{ messages: AiMessage[]; finishReason: 'stop' | 'abort' | 'error'; error?: string }> {
-  const { messages, style, courseContext, signal, onChunk, executeTool, runAiCall } = params
-  const system = buildTutorSystemPrompt(style, courseContext)
+  const { messages, style, courseContext, pageContext, signal, onChunk, executeTool, runAiCall } = params
+  const system = buildTutorSystemPrompt(style, courseContext, pageContext)
 
   const updatedMessages = [...messages]
   let loopCount = 0
-  const MAX_LOOPS = 5
+  const MAX_LOOPS = 8
 
   try {
     while (loopCount < MAX_LOOPS) {
@@ -256,12 +356,16 @@ export async function runAgentLoop(params: {
         return { messages: updatedMessages, finishReason: 'stop' }
       }
 
-      // Record assistant message with tool calls
+      // Record assistant message with tool calls（补全 OpenAI 协议必需的 type 字段）
       const assistantMsg: AiMessage = {
         role: 'assistant',
         content: result.content || '',
       }
-      ;(assistantMsg as any).tool_calls = result.toolCalls
+      ;(assistantMsg as any).tool_calls = result.toolCalls.map((tc) => ({
+        type: 'function' as const,
+        id: tc.id,
+        function: tc.function,
+      }))
       updatedMessages.push(assistantMsg)
 
       for (const call of result.toolCalls) {
@@ -272,7 +376,13 @@ export async function runAgentLoop(params: {
         let toolResult: string
         try {
           const args = JSON.parse(call.function.arguments || '{}')
-          toolResult = await executeTool(call.function.name, args)
+          // 30 秒工具超时兜底：任何工具挂起都不允许卡死整个对话
+          toolResult = await Promise.race([
+            executeTool(call.function.name, args),
+            new Promise<string>((resolve) =>
+              setTimeout(() => resolve(JSON.stringify({ error: `工具 ${call.function.name} 执行超时（30s）` })), 30000),
+            ),
+          ])
         } catch (err: any) {
           toolResult = `Error: ${err.message}`
         }
@@ -280,12 +390,16 @@ export async function runAgentLoop(params: {
         onChunk({ type: 'tool_result', name: call.function.name, result: toolResult })
 
         updatedMessages.push({
-          role: 'user',
-          content: `[工具 ${call.function.name} 返回结果]\n${toolResult}`,
-        })
+          role: 'tool',
+          tool_call_id: call.id,
+          content: toolResult,
+        } as AiMessage)
       }
     }
 
+    // MAX_LOOPS reached — notify the user
+    const truncationNotice = '\n\n*(已达到对话轮次上限，Tutor 已完成本轮思考)*'
+    onChunk({ type: 'text', delta: truncationNotice })
     return { messages: updatedMessages, finishReason: 'stop' }
   } catch (err: any) {
     return { messages: updatedMessages, finishReason: 'error', error: err.message }

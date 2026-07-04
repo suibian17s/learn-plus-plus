@@ -10,6 +10,7 @@ export interface SubAgentInput {
   courseName: string
   homeworkTitle: string
   type: string
+  signal?: AbortSignal
 }
 
 export interface SubAgentOutput {
@@ -37,7 +38,7 @@ ${input.coursewareContext ? `【相关课件内容】\n${input.coursewareContext
     { role: 'user', content: input.questionText },
   ]
 
-  const content = await complete({ system, messages, maxTokens: 4096 })
+  const content = await complete({ system, messages, maxTokens: 4096, signal: input.signal })
   const tokensUsed = Math.ceil(content.length / 2)
 
   return { index: input.index, content, tokensUsed }

@@ -25,24 +25,18 @@ export default function AllUpdatesPage() {
     let cancelled = false
     ;(async () => {
       setLoading(true)
-      const items: any[] = []
-      for (const c of courses) {
-        try {
-          const notices = await window.learn.notice.list(c.id)
-          for (const n of notices) {
-            items.push({ courseId: c.id, courseName: c.name, text: n.title, time: n.publishTime, kind: 'notice' })
-          }
-        } catch { /* ignore */ }
-        try {
-          const hws = await window.learn.hw.list(c.id)
-          for (const hw of hws) {
-            const t = hw.publishTime || hw.startTime || hw.createTime || ''
-            if (!t) continue
-            items.push({ courseId: c.id, courseName: c.name, text: hw.title, time: t, kind: 'homework' })
-          }
-        } catch { /* ignore */ }
-      }
-      items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+      // 复用主进程 dashboard 快照（缓存命中毫秒级），不再逐课串行拉取
+      let items: any[] = []
+      try {
+        const snapshot: any = await window.learn.stats.refreshDashboard({ courses })
+        items = (snapshot?.recentUpdates || []).map((u: any) => ({
+          courseId: u.courseId,
+          courseName: u.courseName,
+          text: u.text,
+          time: u.time,
+          kind: u.kind || 'notice',
+        }))
+      } catch { /* ignore */ }
       if (!cancelled) { setUpdates(items.slice(0, 50)); setLoading(false) }
     })()
     return () => { cancelled = true }

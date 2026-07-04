@@ -1,22 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Alert, Button, Empty, Form, Input, Modal, Spin, Switch, Tag, message } from 'antd'
+import { Button, Collapse, Dropdown, Empty, Form, Input, Modal, Spin, Switch, message } from 'antd'
 import {
   DeleteOutlined,
   EditOutlined,
   InboxOutlined,
   LoginOutlined,
-  LogoutOutlined,
   MailOutlined,
+  MoreOutlined,
+  PaperClipOutlined,
   ReloadOutlined,
   RobotOutlined,
   RollbackOutlined,
+  SendOutlined,
   ShareAltOutlined,
   StarFilled,
   StarOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
-import MarkdownRenderer from '../components/MarkdownRenderer'
+import DOMPurify from 'dompurify'
+import TutorSummaryDrawer from '../components/TutorSummaryDrawer'
 
 interface MailItem {
   id: string
@@ -31,6 +34,7 @@ interface MailItem {
 
 interface MailDetailData extends MailItem {
   body: string
+  htmlBody?: string
   attachments: { name: string; url: string }[]
 }
 
@@ -116,10 +120,35 @@ function extractReplyAddress(from: string): string {
   return normalizeText(angle?.[1] || from).replace(/^["']|["']$/g, '')
 }
 
+// 去掉地址串中显示名外侧的引号："李晶" <a@b> → 李晶 <a@b>
+function formatAddressDisplay(value: string): string {
+  return normalizeText(value).replace(/"([^"]*)"/g, '$1')
+}
+
+// 折叠 Word/Foxmail 风格邮件里的空段落（<p>&nbsp;</p> 链），消除巨大段间距
+function collapseEmptyParagraphs(html: string): string {
+  return html.replace(/<p[^>]*>(?:\s|&nbsp;|<br\s*\/?>|<o:p>|<\/o:p>)*<\/p>/gi, '')
+}
+
+const MAIL_IFRAME_STYLE = `
+  body{margin:0;padding:6px 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:14px;line-height:1.7;color:#333;word-break:break-word}
+  img{max-width:100%;height:auto}
+  table{max-width:100% !important}
+  p{margin:0 0 0.75em}
+  a{color:#6B46C1}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#E4DCF4;border-radius:8px}
+  ::-webkit-scrollbar-track{background:transparent}
+`.replace(/\n\s*/g, '')
+
 function displayCounterparty(mail: MailItem, folder: string): string {
   const value = folder === 'sent' || folder === 'drafts' ? (mail.to || mail.from) : mail.from
   return normalizeText(value) || '(未知联系人)'
 }
+
+// 模块级列表缓存：重进邮箱页 / 切换文件夹时先用上次数据即时渲染，避免整页 spinner
+const mailListMemory = new Map<string, MailItem[]>()
 
 export default function MailboxPage() {
   const navigate = useNavigate()
@@ -132,33 +161,44 @@ export default function MailboxPage() {
   const activeMailId = searchParams.get('mailId') || ''
   const composeRequested = searchParams.get('compose') === '1'
 
-  const [mails, setMails] = useState<MailItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [mails, setMails] = useState<MailItem[]>(() => mailListMemory.get(folder) || [])
+  const [loading, setLoading] = useState(() => !mailListMemory.has(folder))
   const [error, setError] = useState<string | null>(null)
   const [mailLoggedIn, setMailLoggedIn] = useState<boolean | null>(null)
   const [detail, setDetail] = useState<MailDetailData | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [summaryOpen, setSummaryOpen] = useState(false)
-  const [summaryLoading, setSummaryLoading] = useState(false)
-  const [summaryText, setSummaryText] = useState('')
   const [composeOpen, setComposeOpen] = useState(false)
+  const [metaExpanded, setMetaExpanded] = useState(false)
   const [composeMode, setComposeMode] = useState<'write' | 'reply' | 'forward'>('write')
+  const [composePrefill, setComposePrefill] = useState<{ to?: string; subject?: string; body?: string }>({})
   const [composeSending, setComposeSending] = useState(false)
+  const [drafting, setDrafting] = useState(false)
   const [composeForm] = Form.useForm()
   const [imapForm] = Form.useForm<MailLoginValues>()
   const [imapConnecting, setImapConnecting] = useState(false)
 
   const folderLabel = FOLDER_LABELS[folder] || folder
 
-  const loadMails = useCallback(async () => {
-    setLoading(true)
+  const loadMails = useCallback(async (force = false) => {
+    // 有缓存先即时渲染，后台静默换新；无缓存才显示 spinner
+    const cached = mailListMemory.get(folder)
+    if (cached) {
+      setMails(cached)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
     setError(null)
     try {
-      const result = await window.learn.mail.list(folder)
+      const result = await window.learn.mail.list(folder, force)
+      mailListMemory.set(folder, result.mails || [])
       setMails(result.mails || [])
     } catch (err: any) {
-      setError(err?.message || '加载邮件失败')
-      setMails([])
+      if (!cached) {
+        setError(err?.message || '加载邮件失败')
+        setMails([])
+      }
     } finally {
       setLoading(false)
     }
@@ -189,13 +229,22 @@ export default function MailboxPage() {
     return () => { cancelled = true }
   }, [imapForm])
 
+  const lastRefreshTokenRef = useRef('')
   useEffect(() => {
     if (mailLoggedIn === true) {
       setDetail(null)
-      loadMails()
+      // 顶栏刷新按钮改变 refreshToken 时强制绕过缓存
+      const force = !!refreshToken && refreshToken !== lastRefreshTokenRef.current
+      lastRefreshTokenRef.current = refreshToken
+      loadMails(force)
     }
     if (mailLoggedIn === false) setLoading(false)
   }, [folder, mailLoggedIn, refreshToken, loadMails])
+
+  // 星标/删除等本地更新同步回模块缓存，避免重进页面看到旧状态
+  useEffect(() => {
+    if (!loading) mailListMemory.set(folder, mails)
+  }, [mails, loading, folder])
 
   const filteredMails = useMemo(() => {
     const q = searchText.trim().toLowerCase()
@@ -221,7 +270,7 @@ export default function MailboxPage() {
 
   const selected = mails.find((mail) => mail.id === activeMailId) || null
   const unreadCount = mails.filter((mail) => !mail.read).length
-  const starredCount = mails.filter((mail) => mail.starred).length
+  const hasActiveFilter = filter !== 'all' || !!searchText.trim()
 
   useEffect(() => {
     if (!activeMailId || !mailLoggedIn) {
@@ -232,6 +281,7 @@ export default function MailboxPage() {
     ;(async () => {
       setDetailLoading(true)
       setDetail(null)
+      setMetaExpanded(false)
       try {
         const result = await window.learn.mail.get(activeMailId)
         if (!cancelled && result) {
@@ -245,6 +295,7 @@ export default function MailboxPage() {
             starred: result.starred,
             read: result.read,
             body: result.body || '',
+            htmlBody: result.htmlBody || undefined,
             attachments: result.attachments || [],
           })
         }
@@ -259,10 +310,11 @@ export default function MailboxPage() {
 
   useEffect(() => {
     if (!composeRequested) return
+    if (composeOpen) return // 回复/转发已打开写信视图时不重置为空白写信
     setComposeMode('write')
-    composeForm.resetFields()
+    setComposePrefill({})
     setComposeOpen(true)
-  }, [composeRequested, composeForm])
+  }, [composeRequested, composeOpen])
 
   function patchQuery(patch: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams)
@@ -276,7 +328,7 @@ export default function MailboxPage() {
 
   function closeCompose() {
     setComposeOpen(false)
-    if (composeRequested) patchQuery({ compose: null })
+    patchQuery({ compose: null })
   }
 
   async function handleLogin() {
@@ -343,14 +395,6 @@ export default function MailboxPage() {
     }
   }
 
-  async function handleLogout() {
-    await window.learn.mail.logout()
-    setMailLoggedIn(false)
-    setMails([])
-    setDetail(null)
-    message.success('已退出邮箱')
-  }
-
   async function handleStar(mailId: string, starred: boolean) {
     try {
       const result = await window.learn.mail.star(mailId, !starred)
@@ -367,7 +411,7 @@ export default function MailboxPage() {
 
   async function handleDelete(mailId: string) {
     try {
-      const result = await window.learn.mail.delete(mailId)
+      const result = await window.learn.mail.delete(mailId, folder)
       if (result.ok) {
         setMails((prev) => prev.filter((mail) => mail.id !== mailId))
         if (activeMailId === mailId) patchQuery({ mailId: null })
@@ -378,45 +422,42 @@ export default function MailboxPage() {
     }
   }
 
-  async function handleTutorSummary() {
+  function handleTutorSummary() {
+    const subject = detail?.subject || selected?.subject || ''
+    const body = detail?.body ? stripHtml(detail.body) : selected?.preview || ''
+    if (!subject && !body) return
+    setSummaryOpen(true)
+  }
+
+  function runMailSummary(sessionId: string) {
     const subject = detail?.subject || selected?.subject || ''
     const from = detail?.from || selected?.from || ''
     const body = detail?.body ? stripHtml(detail.body) : selected?.preview || ''
-    if (!subject && !body) return
-
-    setSummaryOpen(true)
-    setSummaryLoading(true)
-    setSummaryText('')
-    const sessionId = `mail-summary-${Date.now()}`
-    const unsubChunk = window.learn.hwai.onChunk((data) => {
-      if (data.sessionId === sessionId && data.delta) {
-        setSummaryText((prev) => prev + data.delta)
-      }
-    })
-    const unsubEnd = window.learn.hwai.onEnd((data) => {
-      if (data.sessionId === sessionId) setSummaryLoading(false)
-    })
-    try {
-      const content = `发件人：${from}\n主题：${subject}\n\n${body}`
-      const askResult = await window.learn.hwai.tutorAsk(
-        '__mail__',
-        `请总结以下邮件内容，提取关键信息、待办事项和时间节点：\n${content.slice(0, 4000)}`,
-        sessionId,
-      )
-      if (!askResult.ok) setSummaryText(askResult.error || '总结生成失败，请稍后重试')
-    } catch (err: any) {
-      setSummaryText(`总结失败：${err?.message || '未知错误'}`)
-    } finally {
-      unsubChunk()
-      unsubEnd()
-      setSummaryLoading(false)
-    }
+    const content = `发件人：${from}\n主题：${subject}\n\n${body}`
+    return window.learn.hwai.tutorAsk(
+      '__mail__',
+      `请总结以下邮件内容，提取关键信息、待办事项和时间节点：\n${content.slice(0, 4000)}`,
+      sessionId,
+    )
   }
 
-  function handleConvertToFocus() {
-    const subject = detail?.subject || selected?.subject
-    if (!subject) return
-    message.success(`已将「${subject}」加入今日重点列表`)
+  async function handleConvertToFocus() {
+    const mail = detail || selected
+    if (!mail?.subject) return
+    try {
+      const result = await window.learn.focus.add({
+        id: `mail-${mail.id}`,
+        type: 'email',
+        title: mail.subject,
+        description: mail.from || '',
+        createdAt: new Date().toISOString(),
+        mailId: mail.id,
+      })
+      if (result.ok) message.success(`已将「${mail.subject}」加入今日重点`)
+      else message.error('加入今日重点失败')
+    } catch {
+      message.error('加入今日重点失败')
+    }
   }
 
   function openCompose(mode: 'reply' | 'forward') {
@@ -427,7 +468,7 @@ export default function MailboxPage() {
     const plainBody = detail?.body ? stripHtml(detail.body) : selected?.preview || ''
 
     setComposeMode(mode)
-    composeForm.setFieldsValue({
+    setComposePrefill({
       to: mode === 'reply' ? extractReplyAddress(from) : '',
       subject: `${mode === 'reply' ? 'Re: ' : 'Fwd: '}${subject}`,
       body: mode === 'forward'
@@ -435,6 +476,30 @@ export default function MailboxPage() {
         : '',
     })
     setComposeOpen(true)
+    patchQuery({ compose: '1' })
+  }
+
+  async function handleDraftMail() {
+    const values = composeForm.getFieldsValue()
+    const points = String(values.body || '').trim()
+    if (!points) {
+      message.info('请先在正文里写下要点（例如：向张老师请假，周三有病假条），甘蔗会扩写成完整邮件')
+      return
+    }
+    setDrafting(true)
+    try {
+      const result = await window.learn.hwai.draftMail({ purpose: points, subject: values.subject || '' })
+      if (result.ok && result.draft) {
+        composeForm.setFieldsValue({ body: result.draft })
+        message.success('草稿已生成，请检查并修改后再发送')
+      } else {
+        message.error(result.error || '生成失败，请检查 AI 配置')
+      }
+    } catch (err: any) {
+      message.error('生成失败：' + (err?.message || '未知错误'))
+    } finally {
+      setDrafting(false)
+    }
   }
 
   async function handleSendCompose() {
@@ -463,15 +528,9 @@ export default function MailboxPage() {
     return (
       <div className="lp2-mail-page lp2-mail-centered">
         <section className="lp2-mail-login-card lp2-imap-login-card">
-          <span className="lp2-mail-login-icon"><LoginOutlined /></span>
-          <h2>使用 IMAP 登录邮箱</h2>
-          <p>网页登录抓取已关闭。请使用邮箱账号和客户端密码连接 IMAP/SMTP，Learn++ 会像常规邮箱客户端一样同步邮件。</p>
-          <Alert
-            type="info"
-            showIcon
-            message="默认使用 mails.tsinghua.edu.cn，IMAP 993 SSL，SMTP 465 SSL。"
-            className="lp2-imap-login-alert"
-          />
+          <span className="lp2-mail-login-icon"><MailOutlined /></span>
+          <h2>登录清华邮箱</h2>
+          <p className="lp2-mail-login-sub">使用邮箱账号与密码连接，Learn++ 像常规邮件客户端一样同步邮件</p>
           <Form
             form={imapForm}
             layout="vertical"
@@ -485,43 +544,62 @@ export default function MailboxPage() {
               mailSmtpTls: true,
             }}
           >
-            <div className="lp2-imap-form-grid">
-              <Form.Item name="mailUsername" label="邮箱账号" rules={[{ required: true, message: '请输入邮箱账号' }]}>
-                <Input placeholder="username@mails.tsinghua.edu.cn" />
-              </Form.Item>
-              <Form.Item name="mailPassword" label="密码 / 客户端专用密码">
-                <Input.Password placeholder="留空则使用已保存的密码" />
-              </Form.Item>
-              <Form.Item name="mailImapHost" label="IMAP 服务器" rules={[{ required: true, message: '请输入 IMAP 服务器' }]}>
-                <Input placeholder={MAIL_DEFAULTS.imapHost} />
-              </Form.Item>
-              <Form.Item name="mailImapPort" label="IMAP 端口">
-                <Input placeholder="993" />
-              </Form.Item>
-              <Form.Item name="mailSmtpHost" label="SMTP 服务器">
-                <Input placeholder={MAIL_DEFAULTS.smtpHost} />
-              </Form.Item>
-              <Form.Item name="mailSmtpPort" label="SMTP 端口">
-                <Input placeholder="465" />
-              </Form.Item>
-            </div>
-            <div className="lp2-imap-switches">
-              <Form.Item name="mailImapTls" valuePropName="checked">
-                <Switch checkedChildren="IMAP SSL" unCheckedChildren="IMAP 无加密" />
-              </Form.Item>
-              <Form.Item name="mailSmtpTls" valuePropName="checked">
-                <Switch checkedChildren="SMTP SSL" unCheckedChildren="SMTP STARTTLS" />
-              </Form.Item>
-            </div>
-          </Form>
-          <div className="lp2-mail-login-actions">
-            <Button size="large" onClick={handleTestImap}>
-              测试连接
-            </Button>
-            <Button type="primary" size="large" icon={<LoginOutlined />} loading={imapConnecting} onClick={handleLogin}>
+            <Form.Item name="mailUsername" rules={[{ required: true, message: '请输入邮箱账号' }]}>
+              <Input size="large" placeholder="邮箱账号（username@mails.tsinghua.edu.cn）" />
+            </Form.Item>
+            <Form.Item
+              name="mailPassword"
+              extra="开启两步验证的账号请使用客户端专用密码；留空则使用已保存的密码"
+            >
+              <Input.Password size="large" placeholder="邮箱密码" />
+            </Form.Item>
+            <Button
+              type="primary"
+              size="large"
+              block
+              icon={<LoginOutlined />}
+              loading={imapConnecting}
+              onClick={handleLogin}
+              className="lp2-mail-login-submit"
+            >
               登录邮箱
             </Button>
-          </div>
+            <Collapse
+              ghost
+              className="lp2-imap-advanced"
+              items={[{
+                key: 'advanced',
+                label: '高级设置（服务器与加密，默认适用于清华邮箱）',
+                children: (
+                  <>
+                    <div className="lp2-imap-form-grid">
+                      <Form.Item name="mailImapHost" label="IMAP 服务器" rules={[{ required: true, message: '请输入 IMAP 服务器' }]}>
+                        <Input placeholder={MAIL_DEFAULTS.imapHost} />
+                      </Form.Item>
+                      <Form.Item name="mailImapPort" label="IMAP 端口">
+                        <Input placeholder="993" />
+                      </Form.Item>
+                      <Form.Item name="mailSmtpHost" label="SMTP 服务器">
+                        <Input placeholder={MAIL_DEFAULTS.smtpHost} />
+                      </Form.Item>
+                      <Form.Item name="mailSmtpPort" label="SMTP 端口">
+                        <Input placeholder="465" />
+                      </Form.Item>
+                    </div>
+                    <div className="lp2-imap-switches">
+                      <Form.Item name="mailImapTls" valuePropName="checked">
+                        <Switch checkedChildren="IMAP SSL" unCheckedChildren="IMAP 无加密" />
+                      </Form.Item>
+                      <Form.Item name="mailSmtpTls" valuePropName="checked">
+                        <Switch checkedChildren="SMTP SSL" unCheckedChildren="SMTP STARTTLS" />
+                      </Form.Item>
+                    </div>
+                    <Button onClick={handleTestImap} block>测试连接</Button>
+                  </>
+                ),
+              }]}
+            />
+          </Form>
         </section>
       </div>
     )
@@ -543,7 +621,7 @@ export default function MailboxPage() {
           <h2>邮件加载失败</h2>
           <p>{error}</p>
           <div className="lp2-mail-empty-actions">
-            <Button type="primary" icon={<ReloadOutlined />} onClick={loadMails}>重试</Button>
+            <Button type="primary" icon={<ReloadOutlined />} onClick={() => loadMails(true)}>重试</Button>
             <Button icon={<LoginOutlined />} onClick={() => setMailLoggedIn(false)}>重新配置 IMAP</Button>
           </div>
         </section>
@@ -555,32 +633,63 @@ export default function MailboxPage() {
 
   return (
     <div className="lp2-mail-page">
-      {!activeMailId ? (
+      {composeOpen ? (
+        <article className="lp2-mail-compose-view">
+          <header className="lp2-mail-read-toolbar">
+            <Button icon={<RollbackOutlined />} onClick={closeCompose}>返回</Button>
+            <div>
+              <Button
+                className="lp2-green-button"
+                icon={<RobotOutlined />}
+                loading={drafting}
+                onClick={handleDraftMail}
+                title="把正文里的要点交给甘蔗 Tutor，生成完整邮件草稿"
+              >
+                甘蔗代笔
+              </Button>
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                loading={composeSending}
+                onClick={handleSendCompose}
+              >
+                发送
+              </Button>
+            </div>
+          </header>
+          <div className="lp2-mail-compose-body">
+            <h1>{composeMode === 'write' ? '写邮件' : composeMode === 'reply' ? '回复邮件' : '转发邮件'}</h1>
+            <Form form={composeForm} layout="vertical" className="lp2-mail-compose-form" initialValues={composePrefill}>
+              <Form.Item name="to" label="收件人" rules={[{ required: true, message: '请输入收件人' }]}>
+                <Input placeholder="收件人邮箱地址" />
+              </Form.Item>
+              <Form.Item name="subject" label="主题" rules={[{ required: true, message: '请输入主题' }]}>
+                <Input placeholder="邮件主题" />
+              </Form.Item>
+              <Form.Item name="body" label="正文">
+                <Input.TextArea autoSize={{ minRows: 12, maxRows: 24 }} placeholder="邮件正文..." />
+              </Form.Item>
+            </Form>
+          </div>
+        </article>
+      ) : !activeMailId ? (
         <section className="lp2-mail-list-view" aria-label={`${folderLabel}邮件列表`}>
           <header className="lp2-mail-list-summary">
             <div>
               <span className="lp2-mail-summary-icon"><InboxOutlined /></span>
               <strong>{folderLabel}</strong>
-              <small>{filteredMails.length} / {mails.length} 封 · {unreadCount} 未读 · {starredCount} 星标</small>
+              <small>{hasActiveFilter ? `匹配 ${filteredMails.length} 封` : `${mails.length} 封 · ${unreadCount} 未读`}</small>
             </div>
-            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>退出邮箱</Button>
           </header>
 
           {filteredMails.length === 0 ? (
             <div className="lp2-mail-list-empty">
               <Empty description={mails.length ? '当前筛选下没有邮件' : '未读取到邮件'}>
-                <Button icon={<ReloadOutlined />} onClick={loadMails}>重新读取</Button>
+                <Button icon={<ReloadOutlined />} onClick={() => loadMails(true)}>重新读取</Button>
               </Empty>
             </div>
           ) : (
             <div className="lp2-mail-table" role="table">
-              <div className="lp2-mail-table-head" role="row">
-                <span />
-                <span>{folder === 'sent' || folder === 'drafts' ? '收件人' : '发件人'}</span>
-                <span>主题</span>
-                <span>日期</span>
-                <span />
-              </div>
               {filteredMails.map((mail) => (
                 <div
                   key={mail.id}
@@ -599,7 +708,9 @@ export default function MailboxPage() {
                     <i aria-hidden="true" />
                     <button
                       type="button"
+                      className={mail.starred ? 'is-starred' : ''}
                       aria-label={mail.starred ? '取消星标' : '添加星标'}
+                      title={mail.starred ? '取消星标' : '添加星标'}
                       onClick={(event) => {
                         event.stopPropagation()
                         handleStar(mail.id, mail.starred)
@@ -610,14 +721,12 @@ export default function MailboxPage() {
                   </span>
                   <span className="lp2-mail-counterparty" role="cell">
                     <strong>{displayCounterparty(mail, folder)}</strong>
-                    <small>{folderLabel}</small>
                   </span>
                   <span className="lp2-mail-subject" role="cell">
                     <strong>{mail.subject || '(无主题)'}</strong>
-                    <small>{mail.preview || '暂无预览内容'}</small>
+                    {mail.preview ? <small>{mail.preview}</small> : null}
                   </span>
                   <time role="cell">{mail.date}</time>
-                  <span className="lp2-mail-open-cue" role="cell">›</span>
                 </div>
               ))}
             </div>
@@ -630,17 +739,42 @@ export default function MailboxPage() {
             <div>
               {detailMail && (
                 <>
-                  <Button
-                    icon={detailMail.starred ? <StarFilled /> : <StarOutlined />}
-                    onClick={() => handleStar(detailMail.id, detailMail.starred)}
-                  />
-                  <Button danger icon={<DeleteOutlined />} onClick={() => handleDelete(detailMail.id)} />
                   <Button icon={<EditOutlined />} onClick={() => openCompose('reply')}>回复</Button>
                   <Button icon={<ShareAltOutlined />} onClick={() => openCompose('forward')}>转发</Button>
-                  <Button icon={<ThunderboltOutlined />} onClick={handleConvertToFocus}>转为今日重点</Button>
                   <Button className="lp2-green-button" icon={<RobotOutlined />} onClick={handleTutorSummary}>
                     甘蔗 Tutor 总结
                   </Button>
+                  <Dropdown
+                    trigger={['click']}
+                    menu={{
+                      items: [
+                        {
+                          key: 'star',
+                          icon: detailMail.starred ? <StarFilled /> : <StarOutlined />,
+                          label: detailMail.starred ? '取消星标' : '添加星标',
+                        },
+                        {
+                          key: 'focus',
+                          icon: <ThunderboltOutlined />,
+                          label: '转为今日重点',
+                        },
+                        { type: 'divider' },
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: '删除邮件',
+                          danger: true,
+                        },
+                      ],
+                      onClick: ({ key }) => {
+                        if (key === 'star') handleStar(detailMail.id, detailMail.starred)
+                        if (key === 'focus') handleConvertToFocus()
+                        if (key === 'delete') handleDelete(detailMail.id)
+                      },
+                    }}
+                  >
+                    <Button icon={<MoreOutlined />} aria-label="更多操作" title="更多操作" />
+                  </Dropdown>
                 </>
               )}
             </div>
@@ -655,31 +789,53 @@ export default function MailboxPage() {
           ) : (
             <>
               <section className="lp2-mail-read-header">
-                <Tag color="purple">{folderLabel}</Tag>
                 <h1>{detailMail.subject || '(无主题)'}</h1>
-                <dl className="lp2-mail-read-meta">
-                  <div><dt>发件人</dt><dd>{detailMail.from || '(未知发件人)'}</dd></div>
-                  <div><dt>收件人</dt><dd>{detailMail.to || '(未读取到收件人)'}</dd></div>
-                  <div><dt>日期</dt><dd>{detailMail.date || '(未读取到日期)'}</dd></div>
-                </dl>
+                <div className="lp2-mail-meta-line">
+                  <strong>{formatAddressDisplay(detailMail.from) || '(未知发件人)'}</strong>
+                  {detailMail.date && <span className="lp2-mail-meta-sep">·</span>}
+                  <time>{detailMail.date}</time>
+                </div>
+                {detailMail.to && (
+                  <div
+                    className={`lp2-mail-meta-line secondary${metaExpanded ? ' expanded' : ''}`}
+                    title={metaExpanded ? '点击收起' : '点击展开全部收件人'}
+                    onClick={() => setMetaExpanded((v) => !v)}
+                  >
+                    收件人：{formatAddressDisplay(detailMail.to)}
+                  </div>
+                )}
               </section>
 
               <section className="lp2-mail-read-body">
                 {detailLoading ? (
                   <div className="lp2-mail-body-loading"><Spin /></div>
+                ) : detail?.htmlBody ? (
+                  <iframe sandbox="allow-popups allow-popups-to-escape-sandbox"
+                    title="邮件正文"
+                    srcDoc={`<base target="_blank"><style>${MAIL_IFRAME_STYLE}</style>${DOMPurify.sanitize(collapseEmptyParagraphs(detail.htmlBody))}`}
+                    style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }} />
                 ) : detail?.body ? (
                   <div
                     className="lp2-mail-html-body"
                     dangerouslySetInnerHTML={{ __html: detail.body }}
                   />
                 ) : (
-                  <p>{detailMail.preview || '正文暂时无法读取，请重新同步或检查 IMAP 连接。'}</p>
+                  <p>{(detailMail?.preview) || '(无正文内容)'}</p>
                 )}
 
                 {!!detail?.attachments?.length && (
                   <div className="lp2-mail-attachments">
-                    {detail.attachments.map((attachment) => (
-                      <span key={`${attachment.name}-${attachment.url}`}>{attachment.name}</span>
+                    {detail.attachments.map((att: any) => (
+                      <button
+                        key={att.name}
+                        type="button"
+                        className="lp2-mail-attachment-chip"
+                        title={`保存附件：${att.name}`}
+                        onClick={() => window.learn.mail.saveAttachment(att.url, att.name)}
+                      >
+                        <PaperClipOutlined />
+                        <span>{att.name}</span>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -689,46 +845,13 @@ export default function MailboxPage() {
         </article>
       )}
 
-      <Modal
-        title="甘蔗 Tutor 邮件总结"
+      <TutorSummaryDrawer
         open={summaryOpen}
-        onCancel={() => setSummaryOpen(false)}
-        footer={null}
-        width={640}
-      >
-        {summaryLoading && !summaryText ? (
-          <div className="lp2-mail-modal-loading">
-            <Spin />
-            <p>正在总结邮件内容...</p>
-          </div>
-        ) : (
-          <MarkdownRenderer content={summaryText} />
-        )}
-      </Modal>
-
-      <Modal
-        title={composeMode === 'write' ? '写邮件' : composeMode === 'reply' ? '回复邮件' : '转发邮件'}
-        open={composeOpen}
-        onCancel={closeCompose}
-        onOk={handleSendCompose}
-        okText="发送"
-        cancelText="取消"
-        confirmLoading={composeSending}
-        width={660}
-        destroyOnClose
-      >
-        <Form form={composeForm} layout="vertical" className="lp2-mail-compose-form">
-          <Form.Item name="to" label="收件人" rules={[{ required: true, message: '请输入收件人' }]}>
-            <Input placeholder="收件人邮箱地址" />
-          </Form.Item>
-          <Form.Item name="subject" label="主题" rules={[{ required: true, message: '请输入主题' }]}>
-            <Input placeholder="邮件主题" />
-          </Form.Item>
-          <Form.Item name="body" label="正文">
-            <Input.TextArea rows={10} placeholder="邮件正文..." />
-          </Form.Item>
-        </Form>
-      </Modal>
+        onClose={() => setSummaryOpen(false)}
+        title={`邮件总结 · ${(detail?.subject || selected?.subject || '').slice(0, 20)}`}
+        summaryKey={`mail:${detail?.id || selected?.id || ''}`}
+        run={runMailSummary}
+      />
     </div>
   )
 }

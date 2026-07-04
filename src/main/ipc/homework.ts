@@ -256,13 +256,15 @@ export function registerHomeworkIpc(): void {
     }
   })
 
-  ipcMain.handle('hw:downloadAttachment', async (e, url: string, fileName: string) => {
+  ipcMain.handle('hw:downloadAttachment', async (e, url: string, fileName: string, courseId?: string) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     if (!win) throw new Error('No window')
     const safeName = sanitizeFilename(fileName)
     const downloadId = `att-${Date.now()}`
+    // B16: 按 courseId 子目录存放，避免跨课程同名作业附件互相误判"已下载"
+    const destDir = courseId ? path.join(downloadDirCache, 'hw-attachments', courseId) : downloadDirCache
     return withAuth(async () => {
-      const destPath = await downloadFile(url, downloadDirCache, safeName, win, downloadId)
+      const destPath = await downloadFile(url, destDir, safeName, win, downloadId)
       return { downloadId, destPath }
     })
   })

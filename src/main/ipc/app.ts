@@ -51,6 +51,7 @@ function runWindowCommand(sender: Electron.WebContents, command: string): { ok: 
   }
 
   if (command === 'quit') {
+    win.close()
     setTimeout(() => app.exit(0), 0)
     return { ok: true }
   }
@@ -147,28 +148,5 @@ export function registerAppIpc(): void {
 
   ipcMain.on('window:command', (event, command: string) => {
     runWindowCommand(event.sender, command)
-  })
-
-  ipcMain.handle('window:minimize', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (win && !win.isDestroyed()) win.minimize()
-  })
-
-  ipcMain.handle('window:toggle-maximize', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (!win || win.isDestroyed()) return
-    if (win.isMaximized()) win.unmaximize()
-    else win.maximize()
-  })
-
-  ipcMain.handle('window:close', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (win && !win.isDestroyed()) win.close()
-  })
-
-  ipcMain.handle('window:quit', async () => {
-    const win = BrowserWindow.getFocusedWindow()
-    if (win && !win.isDestroyed()) win.close()
-    setTimeout(() => app.exit(0), 0)
   })
 }

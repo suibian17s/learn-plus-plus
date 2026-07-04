@@ -1,16 +1,22 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, app } from 'electron'
+import log from 'electron-log'
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { settingsFile } from '../utils/paths'
 import { scan, analyze, generate, abortGeneration, buildHwAttachment } from '../services/homework-ai'
+import { parseAttachment } from '../services/attachment-parser'
+import { downloadUrlToBuffer } from '../services/downloader'
+import { addFocusItem } from '../services/focus-store'
 import { orchestrate } from '../services/homework-orchestrator'
-import { askTutor, summarizeCourseArea, summarizeSingleFile } from '../services/tutor'
+import { askTutor, summarizeCourseArea, summarizeSingleFile, askAboutFile } from '../services/tutor'
 import { complete } from '../services/ai'
 import { withAuth } from '../services/learn'
 import { query as searchQuery } from '../services/search-index'
 import { getMailList, getMailDetail, isMailLoggedIn } from '../services/mail-service'
+import { getStatsForAI } from '../services/stats'
 import { formatError } from '../utils/errors'
-import { getAiProviderPreset, normalizeCustomEndpoint, type AiApiFormat } from '../../shared/aiProviders'
-import { loadApiKey } from '../services/secret-store'
+import { aiCall, loadAiSettings, buildAiHeaders, type AiMessage } from '../services/ai-client'
 import {
   runAgentLoop,
   type ToolCall,
@@ -22,59 +28,6 @@ import { CourseType } from 'thu-learn-lib'
 // ── Abort controller store ──
 
 const abortControllers = new Map<string, AbortController>()
-
-// ── AI settings helpers (duplicated from services/ai.ts to keep it self-contained) ──
-
-function loadAiSettings(): { provider: string; model: string; apiKey: string; endpoint: string; apiFormat: AiApiFormat } {
-  try {
-    const raw = fs.readFileSync(settingsFile, 'utf-8')
-    const s = JSON.parse(raw)
-    const provider = s.aiProvider || 'anthropic'
-    const preset = getAiProviderPreset(provider)
-    const apiFormat = (provider === 'custom' ? s.aiApiFormat : preset.apiFormat) || 'openai'
-    const endpoint = provider === 'custom'
-      ? normalizeCustomEndpoint(s.aiBaseUrl || '', apiFormat)
-      : preset.endpoint
-    return {
-      provider,
-      model: s.aiModel || preset.defaultModel || 'claude-sonnet-4-6',
-      apiKey: loadApiKey(provider),
-      endpoint,
-      apiFormat,
-    }
-  } catch {
-    const preset = getAiProviderPreset('anthropic')
-    return {
-      provider: 'anthropic',
-      model: preset.defaultModel,
-      apiKey: loadApiKey('anthropic'),
-      endpoint: preset.endpoint,
-      apiFormat: preset.apiFormat,
-    }
-  }
-}
-
-function buildAiHeaders(apiKey: string, provider: string, apiFormat: AiApiFormat): Record<string, string> {
-  switch (apiFormat) {
-    case 'anthropic':
-      return {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      }
-    default: {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      }
-      if (provider === 'openrouter') {
-        headers['HTTP-Referer'] = 'https://learnplusplus.local'
-        headers['X-Title'] = 'learn++ 甘蔗 tutor'
-      }
-      return headers
-    }
-  }
-}
 
 // ── Tool executor: maps tool names to actual data-fetching calls ──
 
@@ -95,13 +48,25 @@ async function executeTutorTool(name: string, args: Record<string, any>): Promis
     case 'list_homeworks': {
       return withAuth(async (h) => {
         const list = await h.getHomeworkList(args.courseId)
-        return JSON.stringify(list.map((hw: any) => ({
-          id: hw.id,
-          title: hw.title || '',
-          submitted: !!hw.submitted,
-          deadline: hw.deadline || '',
-          description: (hw.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
-        })))
+        return JSON.stringify(list.map((hw: any) => {
+          // 得分过滤异常负值（维护铁律）
+          const validGrade = typeof hw.grade === 'number' && hw.grade >= 0 ? hw.grade : undefined
+          return {
+            id: hw.id,
+            title: hw.title || '',
+            status: hw.submitted ? (hw.graded ? '已批阅' : '已提交') : '未提交',
+            deadline: hw.deadline || '',
+            submitTime: hw.submitTime || '',
+            graded: !!hw.graded,
+            grade: validGrade,
+            gradeLevel: hw.gradeLevel || undefined,
+            graderName: hw.graderName || undefined,
+            gradeComment: hw.gradeContent
+              ? String(hw.gradeContent).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+              : undefined,
+            description: (hw.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+          }
+        }))
       })
     }
 
@@ -218,7 +183,6 @@ async function executeTutorTool(name: string, args: Record<string, any>): Promis
 
     case 'complete_homework': {
       try {
-        // List homeworks for the course to give the AI context
         return withAuth(async (h) => {
           const list = await h.getHomeworkList(args.courseId)
           const homeworks = list.map((hw: any) => ({
@@ -271,34 +235,10 @@ async function executeTutorTool(name: string, args: Record<string, any>): Promis
 
     case 'get_stats': {
       try {
-        const statsFile = settingsFile.replace(/[^/\\]+$/, 'stats.json')
-        let dailyMinutes: Record<string, number> = {}
-        let lastActiveDate = ''
-        try {
-          const raw = fs.readFileSync(statsFile, 'utf-8')
-          const data = JSON.parse(raw)
-          dailyMinutes = data.dailyMinutes || {}
-          lastActiveDate = data.lastActiveDate || ''
-        } catch { /* no stats file yet */ }
+        // B12 fix: use the canonical stats.ts implementation instead of duplicating
+        const stats = getStatsForAI()
 
-        const today = new Date().toISOString().slice(0, 10)
-        const todayMinutes = dailyMinutes[today] || 0
-        const totalDays = Object.keys(dailyMinutes).length
-
-        // Compute streak
-        let streak = 0
-        const d = new Date()
-        while (true) {
-          const key = d.toISOString().slice(0, 10)
-          if (dailyMinutes[key]) {
-            streak++
-            d.setDate(d.getDate() - 1)
-          } else {
-            break
-          }
-        }
-
-        // Course count
+        // Course count is a separate concern — fetch it here
         let courseCount = 0
         try {
           const courses = await withAuth(async (h) => {
@@ -308,17 +248,144 @@ async function executeTutorTool(name: string, args: Record<string, any>): Promis
           courseCount = courses.length
         } catch { /* ignore */ }
 
-        return JSON.stringify({
-          todayMinutes,
-          todayHours: (todayMinutes / 60).toFixed(1),
-          totalActiveDays: totalDays,
-          streak,
-          courseCount,
-          lastActiveDate: lastActiveDate || today,
-        })
+        return JSON.stringify({ ...stats, courseCount })
       } catch (err: any) {
         return JSON.stringify({ error: `获取统计数据失败: ${err.message}` })
       }
+    }
+
+    case 'get_file_content': {
+      try {
+        const text = await withAuth(async (h) => {
+          const files = await h.getFileList(args.courseId)
+          const file: any = (files as any[]).find((f: any) => f.id === args.fileId || f.fileId === args.fileId)
+          if (!file) return null
+          const url = file.downloadUrl || file.url
+          if (!url) return null
+          const buffer = await downloadUrlToBuffer(url)
+          const tempDir = path.join(os.tmpdir(), 'learnpp-tutor-tool')
+          fs.mkdirSync(tempDir, { recursive: true })
+          const ext = file.fileType ? `.${String(file.fileType).replace(/^\./, '')}` : path.extname(file.title || '')
+          const tempPath = path.join(tempDir, `${Date.now()}${ext || '.pdf'}`)
+          fs.writeFileSync(tempPath, buffer)
+          try {
+            const parsed = await parseAttachment(tempPath)
+            return { name: file.title || file.name || '', text: parsed.text }
+          } finally {
+            try { fs.unlinkSync(tempPath) } catch { /* ignore */ }
+          }
+        })
+        if (!text) return JSON.stringify({ error: '未找到该课件或无下载地址，请先用 list_files 确认 fileId' })
+        if (!text.text?.trim()) return JSON.stringify({ error: `课件「${text.name}」无法提取文本（可能是扫描版或纯图片）` })
+        return JSON.stringify({ name: text.name, content: text.text.slice(0, 12000) })
+      } catch (err: any) {
+        return JSON.stringify({ error: `读取课件失败: ${err.message}` })
+      }
+    }
+
+    case 'get_homework_detail': {
+      try {
+        const analyzed = await analyze(args.courseId, args.homeworkId)
+        // 补充得分/批阅信息（analyze 不含）
+        let gradeInfo: Record<string, any> = {}
+        try {
+          const list = await withAuth(async (h) => h.getHomeworkList(args.courseId))
+          const raw: any = (list as any[]).find((x: any) => x.id === args.homeworkId)
+          if (raw) {
+            const vg = typeof raw.grade === 'number' && raw.grade >= 0 ? raw.grade : undefined
+            gradeInfo = {
+              status: raw.submitted ? (raw.graded ? '已批阅' : '已提交') : '未提交',
+              grade: vg,
+              gradeLevel: raw.gradeLevel || undefined,
+              graderName: raw.graderName || undefined,
+              gradeComment: raw.gradeContent
+                ? String(raw.gradeContent).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600)
+                : undefined,
+            }
+          }
+        } catch { /* best-effort */ }
+        return JSON.stringify({
+          title: analyzed.hw.title,
+          deadline: analyzed.hw.deadline,
+          ...gradeInfo,
+          description: (analyzed.hw.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000),
+          attachments: analyzed.parsedAttachments.map((a) => ({ name: a.name, content: a.text.slice(0, 4000) })),
+          type: analyzed.type,
+          warnings: analyzed.warnings,
+        })
+      } catch (err: any) {
+        return JSON.stringify({ error: `获取作业详情失败: ${err.message}` })
+      }
+    }
+
+    case 'get_notice_detail': {
+      return withAuth(async (h) => {
+        const notices = await h.getNotificationList(args.courseId)
+        const notice: any = (notices as any[]).find((n: any) => n.id === args.noticeId)
+        if (!notice) return JSON.stringify({ error: '未找到该公告，请先用 list_notices 确认 noticeId' })
+        return JSON.stringify({
+          title: notice.title || '',
+          publisher: notice.publisher || '',
+          publishTime: notice.publishTime || '',
+          content: String(notice.content || '').replace(/<[^>]+>/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 8000),
+        })
+      })
+    }
+
+    case 'list_deadlines': {
+      try {
+        // 直接读 dashboard 磁盘缓存（SWR 常驻），毫秒级返回
+        const cacheFile = path.join(app.getPath('userData'), 'dashboard-cache.json')
+        const raw = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'))
+        const data = raw?.data
+        if (!data) return JSON.stringify({ message: '暂无待办快照，请让用户先打开一次首页。' })
+        return JSON.stringify({
+          snapshotAgeMinutes: raw.ts ? Math.round((Date.now() - raw.ts) / 60000) : null,
+          todayFocus: (data.todayFocus || []).map((t: any) => ({
+            title: t.title, courseName: t.courseName, courseId: t.courseId,
+            deadline: t.deadline || '', priority: t.priority, tag: t.tag,
+          })),
+          courseProgress: (data.courseProgress || []).filter((c: any) => c.total > 0).map((c: any) => ({
+            courseName: c.courseName, done: c.done, total: c.total,
+          })),
+        })
+      } catch {
+        return JSON.stringify({ message: '暂无待办快照，请让用户先打开一次首页生成数据。' })
+      }
+    }
+
+    case 'add_focus_item': {
+      try {
+        if (!args.title) return JSON.stringify({ error: '缺少任务标题' })
+        addFocusItem({
+          id: `tutor-${Date.now()}`,
+          type: 'custom',
+          title: String(args.title).slice(0, 120),
+          description: String(args.description || '甘蔗 Tutor 添加'),
+          createdAt: new Date().toISOString(),
+        })
+        return JSON.stringify({ ok: true, message: `已将「${args.title}」加入今日重点，用户可在首页看到。` })
+      } catch (err: any) {
+        return JSON.stringify({ error: `添加失败: ${err.message}` })
+      }
+    }
+
+    case 'draft_mail': {
+      try {
+        const draft = await complete({
+          system: '你是邮件写作助手。根据用户目的起草一封结构完整、得体的中文邮件正文（含称呼与署名占位"[你的姓名]"）。只输出正文，不要解释。',
+          messages: [{ role: 'user', content: `目的与要点：${args.purpose}\n语气：${args.tone || '正式客气'}` }],
+          maxTokens: 1200,
+        })
+        return JSON.stringify({ draft, note: '这是草稿，未发送。请把草稿展示给用户，提示可复制到写邮件页面。' })
+      } catch (err: any) {
+        return JSON.stringify({ error: `起草失败: ${err.message}` })
+      }
+    }
+
+    case 'navigate_to': {
+      // 实际跳转由 renderer 拦截 tool_call 渲染为可点击卡片，这里只需确认
+      return JSON.stringify({ ok: true, message: '跳转卡片已展示给用户。' })
     }
 
     default:
@@ -326,220 +393,27 @@ async function executeTutorTool(name: string, args: Record<string, any>): Promis
   }
 }
 
-// ── Custom AI call with tool support (handles both Anthropic and OpenAI) ──
+// ── AI call for agent loop (thin adapter over unified ai-client) ──
 
 async function runAiCallWithTools(opts: {
   system: string
-  messages: any[]
+  messages: AiMessage[]
   tools?: any[]
   signal?: AbortSignal
   onChunk?: (delta: string) => void
 }): Promise<{ content: string; toolCalls?: ToolCall[] }> {
-  const { provider, model, apiKey, endpoint, apiFormat } = loadAiSettings()
+  // Prepend system message and delegate to the unified client
+  const allMessages: AiMessage[] = [
+    { role: 'system', content: opts.system },
+    ...opts.messages,
+  ]
 
-  if (!apiKey) throw new Error('AI API key not configured')
-  if (!endpoint) throw new Error('AI API endpoint not configured')
-
-  const headers = buildAiHeaders(apiKey, provider, apiFormat)
-  const maxTokens = 4096
-
-  let body: string
-
-  if (apiFormat === 'anthropic') {
-    // Anthropic native format
-    const systemContent = [{ type: 'text', text: opts.system }]
-
-    // Convert OpenAI-format tool definitions to Anthropic format
-    const anthropicTools = opts.tools?.map((t: any) => ({
-      name: t.function.name,
-      description: t.function.description,
-      input_schema: t.function.parameters,
-    }))
-
-    // Build messages array - handle tool_call and tool role messages
-    const anthropicMessages = opts.messages.map((m: any) => {
-      if (m.role === 'user' || m.role === 'assistant') {
-        return {
-          role: m.role,
-          content: typeof m.content === 'string' ? m.content : m.content,
-        }
-      }
-      // Convert tool role messages to user messages with tool result content
-      if ((m as any).role === 'tool' || (m as any).tool_call_id) {
-        return {
-          role: 'user' as const,
-          content: `[工具返回结果]\n${m.content || ''}`,
-        }
-      }
-      return { role: 'user' as const, content: String(m.content || '') }
-    })
-
-    const bodyObj: any = {
-      model,
-      max_tokens: maxTokens,
-      system: systemContent,
-      messages: anthropicMessages,
-      stream: true,
-    }
-
-    if (anthropicTools?.length) {
-      bodyObj.tools = anthropicTools
-    }
-
-    body = JSON.stringify(bodyObj)
-  } else {
-    // OpenAI-compatible format
-    const fullMessages: any[] = [
-      { role: 'system', content: opts.system },
-    ]
-
-    for (const m of opts.messages) {
-      if (m.role === 'assistant' && (m as any).tool_calls) {
-        fullMessages.push({
-          role: 'assistant',
-          content: m.content || '',
-          tool_calls: (m as any).tool_calls,
-        })
-      } else if (m.role === 'user') {
-        fullMessages.push({
-          role: 'user',
-          content: typeof m.content === 'string' ? m.content : m.content,
-        })
-      } else {
-        // Skip tool-role messages for OpenAI format (tool results are embedded in user messages)
-        fullMessages.push({
-          role: m.role,
-          content: typeof m.content === 'string' ? m.content : m.content,
-        })
-      }
-    }
-
-    const bodyObj: any = {
-      model,
-      max_tokens: maxTokens,
-      messages: fullMessages,
-      stream: true,
-    }
-
-    if (opts.tools?.length) {
-      bodyObj.tools = opts.tools
-      bodyObj.tool_choice = 'auto'
-    }
-
-    body = JSON.stringify(bodyObj)
-  }
-
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body,
+  return aiCall(allMessages, {
+    tools: opts.tools,
     signal: opts.signal,
+    onChunk: opts.onChunk,
+    stream: true,
   })
-
-  if (!resp.ok) {
-    const text = await resp.text()
-    throw new Error(`AI API error ${resp.status}: ${text}`)
-  }
-
-  if (!resp.body) throw new Error('No response body')
-
-  const reader = resp.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let fullText = ''
-  const toolCallMap = new Map<number, ToolCall>()
-
-  function applyOpenAiToolDelta(delta: any): void {
-    const calls = delta?.tool_calls || []
-    for (const call of calls) {
-      const index = call.index || 0
-      const current = toolCallMap.get(index) || {
-        id: call.id || `tool-${index}`,
-        function: { name: '', arguments: '' },
-      }
-      if (call.id) current.id = call.id
-      if (call.function?.name) current.function.name += call.function.name
-      if (call.function?.arguments) current.function.arguments += call.function.arguments
-      toolCallMap.set(index, current)
-    }
-  }
-
-  let anthropicToolIndex: number | null = null
-
-  function applyAnthropicEvent(parsed: any): void {
-    if (parsed?.type === 'content_block_start' && parsed?.content_block?.type === 'tool_use') {
-      const index = parsed.index || 0
-      anthropicToolIndex = index
-      toolCallMap.set(index, {
-        id: parsed.content_block.id || `tool-${index}`,
-        function: {
-          name: parsed.content_block.name || '',
-          arguments: '',
-        },
-      })
-      return
-    }
-    if (parsed?.type === 'content_block_delta' && parsed?.delta?.type === 'input_json_delta') {
-      const index = parsed.index ?? anthropicToolIndex ?? 0
-      const current = toolCallMap.get(index)
-      if (current) current.function.arguments += parsed.delta.partial_json || ''
-      return
-    }
-    const delta = parsed?.delta?.text || parsed?.content_block?.text || ''
-    if (delta) {
-      fullText += delta
-      opts.onChunk?.(delta)
-    }
-  }
-
-  function handleData(data: string): void {
-    if (!data || data === '[DONE]') return
-    try {
-      const parsed = JSON.parse(data)
-      if (apiFormat === 'anthropic') {
-        applyAnthropicEvent(parsed)
-        return
-      }
-
-      const delta = parsed?.choices?.[0]?.delta
-      const text = delta?.content || ''
-      if (text) {
-        fullText += text
-        opts.onChunk?.(text)
-      }
-      applyOpenAiToolDelta(delta)
-    } catch {
-      // Ignore malformed stream fragments.
-    }
-  }
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() || ''
-    for (const part of parts) {
-      const data = part.split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trim())
-        .join('\n')
-      handleData(data)
-    }
-  }
-
-  if (buffer.trim()) {
-    const data = buffer.split('\n')
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).trim())
-      .join('\n')
-    handleData(data)
-  }
-
-  const toolCalls = Array.from(toolCallMap.values()).filter((call) => call.function.name)
-
-  return { content: fullText, toolCalls: toolCalls.length ? toolCalls : undefined }
 }
 
 // ── IPC registration ──
@@ -561,9 +435,9 @@ export function registerAiIpc(): void {
     }
   })
 
-  ipcMain.handle('hwai:generate', async (_e, params: any) => {
+  ipcMain.handle('hwai:generate', async (event, params: any) => {
     try {
-      return await generate(params)
+      return await generate(params, event.sender)
     } catch (err) {
       const msg = formatError(err)
       if (msg.includes('abort') || msg.includes('AbortError')) {
@@ -609,7 +483,6 @@ export function registerAiIpc(): void {
 
   ipcMain.handle('hwai:abort', (_e, sessionId: string) => {
     abortGeneration(sessionId)
-    // Also abort any tutor chat session with the same ID
     const ctrl = abortControllers.get(sessionId)
     if (ctrl) {
       ctrl.abort()
@@ -620,21 +493,22 @@ export function registerAiIpc(): void {
   // ── Tutor agent chat (new in v2.0) ──
 
   ipcMain.handle('tutor:chat', async (event, params: {
-    messages: { role: string; content: string }[]
+    messages: { role: string; content: string; images?: string[] }[]
     courseId?: string
     style?: 'cute' | 'serious'
     sessionId: string
+    pageContext?: { label?: string; courseId?: string; courseName?: string; itemTitle?: string; itemExcerpt?: string }
   }) => {
-    const { messages, courseId, style = 'cute', sessionId } = params
+    const { messages: rawMessages, courseId, style = 'cute', sessionId, pageContext } = params
+    // 历史裁剪：只带最近 12 条进上下文，更早的对话截断（控制 token）
+    const messages = rawMessages.length > 12 ? rawMessages.slice(-12) : rawMessages
     const sender = event.sender
     const win = BrowserWindow.fromWebContents(sender)
 
-    // Create abort controller for this session
     const ctrl = new AbortController()
     abortControllers.set(sessionId, ctrl)
 
     try {
-      // Build course context if courseId is provided
       let courseContext: { name: string; teacher: string } | undefined
       if (courseId) {
         try {
@@ -662,9 +536,19 @@ export function registerAiIpc(): void {
       }
 
       const result = await runAgentLoop({
-        messages: messages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+        messages: messages.map((m: any) => {
+          // 带图片的 user 消息 → 中性多模态 content（ai-client 再按服务商转 image block）
+          if (m.role === 'user' && Array.isArray(m.images) && m.images.length) {
+            const parts: any[] = []
+            if (m.content) parts.push({ type: 'text', text: m.content })
+            for (const url of m.images) parts.push({ type: 'image', dataUrl: url })
+            return { role: 'user' as const, content: parts }
+          }
+          return { role: m.role as 'user' | 'assistant', content: m.content }
+        }),
         style,
         courseContext,
+        pageContext,
         sessionId,
         signal: ctrl.signal,
         onChunk,
@@ -672,8 +556,14 @@ export function registerAiIpc(): void {
         runAiCall: runAiCallWithTools,
       })
 
+      // 错误必须可见：任何一轮 API/工具失败都直接写进聊天流，绝不静默吞掉
+      if (result.finishReason === 'error' && result.error) {
+        log.error('[tutor:chat] agent loop error:', result.error)
+        onChunk({ type: 'text', delta: `\n\n⚠️ 对话出错：${result.error}` })
+      }
+
       if (win && !win.isDestroyed()) {
-        win.webContents.send('hwai:generate-end', { sessionId })
+        win.webContents.send('hwai:generate-end', { sessionId, error: result.error })
       }
 
       return {
@@ -696,6 +586,23 @@ export function registerAiIpc(): void {
     if (ctrl) {
       ctrl.abort()
       abortControllers.delete(sessionId)
+    }
+  })
+
+  // ── 写邮件页"甘蔗代笔"：根据要点生成正文草稿（只生成，不发送）──
+  ipcMain.handle('hwai:draft-mail', async (_e, params: { purpose: string; subject?: string }) => {
+    try {
+      const draft = await complete({
+        system: '你是邮件写作助手。根据用户提供的主题与要点，起草一封结构完整、语气得体的中文邮件正文（含称呼与署名占位"[你的姓名]"）。只输出正文，不要任何解释。',
+        messages: [{
+          role: 'user',
+          content: `邮件主题：${params.subject || '（未填写）'}\n目的与要点：${params.purpose}`,
+        }],
+        maxTokens: 1200,
+      })
+      return { ok: true, draft }
+    } catch (err) {
+      return { ok: false, error: formatError(err) }
     }
   })
 
@@ -748,6 +655,24 @@ export function registerAiIpc(): void {
       return { ok: true }
     } catch (err: any) {
       return { ok: false, error: err.message || '连接失败' }
+    }
+  })
+
+  ipcMain.handle('hwai:file-chat', async (event, req: {
+    file: { name: string; url: string; fileType?: string }
+    question: string
+    history: { role: 'user' | 'assistant'; content: string }[]
+    sessionId?: string
+  }) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const content = await askAboutFile(req.file, req.question, req.history || [], req.sessionId ? (delta) => {
+        if (win && !win.isDestroyed()) win.webContents.send('hwai:generate-chunk', { sessionId: req.sessionId, type: 'text', delta })
+      } : undefined)
+      if (req.sessionId && win && !win.isDestroyed()) win.webContents.send('hwai:generate-end', { sessionId: req.sessionId })
+      return { ok: true, content }
+    } catch (err) {
+      return { ok: false, error: formatError(err) }
     }
   })
 

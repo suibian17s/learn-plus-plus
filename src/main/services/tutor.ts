@@ -111,39 +111,80 @@ export async function askTutor(courseId: string, question: string, onChunk?: (de
   })
 }
 
-export async function summarizeSingleFile(
+// 课件文本缓存：总结 / 追问复用，避免重复下载解析
+const fileTextCache = new Map<string, { text: string; at: number }>()
+const FILE_TEXT_TTL = 30 * 60 * 1000
+
+async function extractFileText(
   file: { name: string; url: string; fileType?: string },
-  onChunk?: (delta: string) => void,
-): Promise<string> {
+): Promise<{ text: string; oversized: boolean }> {
+  const cached = fileTextCache.get(file.url)
+  if (cached && Date.now() - cached.at < FILE_TEXT_TTL) return { text: cached.text, oversized: false }
+
   const buffer = await downloadUrlToBuffer(file.url)
   const tmpDir = path.join(os.tmpdir(), 'learnpp-tutor-files')
   fs.mkdirSync(tmpDir, { recursive: true })
-  const tmpPath = path.join(tmpDir, `${Date.now()}_${file.name}`)
+  // 课件 title 通常不带扩展名，用 fileType 补回，否则解析器无法判断类型
+  const ext = String(file.fileType || '').trim().toLowerCase().replace(/^\./, '')
+  const hasExt = /\.[a-z0-9]{1,10}$/i.test(file.name)
+  const safeName = hasExt ? file.name : (/^[a-z0-9]{1,10}$/.test(ext) ? `${file.name}.${ext}` : file.name)
+  const tmpPath = path.join(tmpDir, `${Date.now()}_${safeName}`)
   fs.writeFileSync(tmpPath, buffer)
 
   try {
     const parsed = await parseAttachment(tmpPath)
-    if (!parsed.text.trim()) {
-      return `文件 "${file.name}" 无法提取文本内容（可能为扫描版 PDF 或纯图片），请下载后手动查看。`
-    }
-
-    const summary = await complete({
-      system: '你是 learn++ 的甘蔗 tutor。请用中文总结以下课件内容，输出简洁有条理的摘要，突出关键概念和学习重点。',
-      messages: [{
-        role: 'user' as const,
-        content: `课件名称：${file.name}\n\n课件内容：\n${parsed.text.slice(0, 15000)}\n\n请总结该课件的：\n1. 核心知识点\n2. 重点概念\n3. 学习建议`,
-      }],
-      maxTokens: 2000,
-      onChunk,
-    })
-
+    if (parsed.warnings.includes('OVERSIZED')) return { text: '', oversized: true }
+    const text = parsed.text.trim()
+    if (text) fileTextCache.set(file.url, { text, at: Date.now() })
+    return { text, oversized: false }
+  } finally {
     try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
-    return summary
-  } catch (err: any) {
-    try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
-    if (err.message?.includes('不支持的文件类型')) {
-      return `文件类型 "${path.extname(file.name)}" 暂不支持内容解析，请下载后手动查看。`
-    }
-    throw err
   }
+}
+
+export async function summarizeSingleFile(
+  file: { name: string; url: string; fileType?: string },
+  onChunk?: (delta: string) => void,
+): Promise<string> {
+  const { text, oversized } = await extractFileText(file)
+  if (oversized) {
+    return `课件 "${file.name}" 体积过大（超过 40MB，可能含大量音视频），暂不支持在线总结，请下载后查看。`
+  }
+  if (!text) {
+    return `文件 "${file.name}" 无法提取文本内容（可能为扫描版 PDF 或纯图片），请下载后手动查看。`
+  }
+  return complete({
+    system: '你是 learn++ 的甘蔗 tutor。请用中文总结以下课件内容，输出简洁有条理的摘要，突出关键概念和学习重点。可使用 Markdown 与 LaTeX 公式（$...$ 行内、$$...$$ 独立行）。',
+    messages: [{
+      role: 'user' as const,
+      content: `课件名称：${file.name}\n\n课件内容：\n${text.slice(0, 15000)}\n\n请总结该课件的：\n1. 核心知识点\n2. 重点概念\n3. 学习建议`,
+    }],
+    maxTokens: 2000,
+    onChunk,
+  })
+}
+
+// 课件追问：基于课件全文回答学生问题（多轮）
+export async function askAboutFile(
+  file: { name: string; url: string; fileType?: string },
+  question: string,
+  history: { role: 'user' | 'assistant'; content: string }[],
+  onChunk?: (delta: string) => void,
+): Promise<string> {
+  const { text, oversized } = await extractFileText(file)
+  if (oversized) return '该课件体积过大，暂不支持在线阅读，请下载后查看。'
+  if (!text) return '无法读取该课件的文本内容（可能是扫描版或纯图片）。'
+
+  const messages: { role: 'user' | 'assistant'; content: string }[] = [
+    { role: 'user', content: `以下是课件《${file.name}》的完整内容，后续问题请基于它回答：\n\n${text.slice(0, 15000)}` },
+    { role: 'assistant', content: '好的，我已经阅读了这份课件，请提问。' },
+    ...history.slice(-8),
+    { role: 'user', content: question },
+  ]
+  return complete({
+    system: '你是 learn++ 的甘蔗 tutor。基于给定的课件内容回答学生问题，只依据课件内容作答；课件未涉及或不确定时明确说明。回答简洁准确，可用 Markdown 与 LaTeX 公式。',
+    messages,
+    maxTokens: 1500,
+    onChunk,
+  })
 }

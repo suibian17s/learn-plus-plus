@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import EmptyState from '../components/EmptyState'
+import { useTutorStore } from '../store/tutor'
 import { useDownloadStore } from '../store/downloads'
 import { formatDateTime } from '../utils/time'
 
@@ -84,10 +85,13 @@ export default function HomeworkDetailPage() {
     const uniqueNames = Array.from(new Set(names))
     if (!uniqueNames.length) return
 
+    // B16: 用 合成 courseId（hw-<courseId>-<homeworkId>）作 downloadState 探针键，避免跨课程/跨作业同名附件误判
+    const nsCourseId = `hw-${courseId}-${homeworkId}`
+
     let alive = true
     Promise.all(
       uniqueNames.map(async (name) => {
-        const state = await window.learn.files.downloadState(name)
+        const state = await window.learn.files.downloadState(nsCourseId, name, name)
         return [name, state] as const
       }),
     ).then((entries) => {
@@ -102,7 +106,7 @@ export default function HomeworkDetailPage() {
     return () => {
       alive = false
     }
-  }, [homeworkId, hw])
+  }, [homeworkId, courseId, hw])
 
   async function handleSubmit() {
     if (!hw) return
@@ -145,13 +149,16 @@ export default function HomeworkDetailPage() {
 
   async function handleDownloadAttachment(url: string, name: string) {
     setDownloading(name)
+    const nsCourseId = `hw-${courseId}-${homeworkId}`
     try {
-      const result = await window.learn.hw.downloadAttachment(url, name)
+      const result = await window.learn.hw.downloadAttachment(url, name, nsCourseId)
       message.success(`已下载: ${name}`)
       if (result?.destPath) {
         addDownloadRecord({
           id: result.downloadId,
           fileName: name,
+          courseId: nsCourseId,
+          fileId: name,
           loaded: 0,
           total: 0,
           status: 'completed',
@@ -172,12 +179,14 @@ export default function HomeworkDetailPage() {
   }
 
   function downloadedAttachment(name: string): { destPath: string } | null {
+    const nsCourseId = `hw-${courseId}-${homeworkId}`
     const state = downloadStates[name]
     if (state?.downloaded) return { destPath: state.destPath }
     const record = downloadRecords.find((item) => (
       item.status === 'completed' &&
       item.destPath &&
-      item.fileName === name
+      item.fileName === name &&
+      item.courseId === nsCourseId
     ))
     return record?.destPath ? { destPath: record.destPath } : null
   }
@@ -227,10 +236,25 @@ export default function HomeworkDetailPage() {
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}
-        style={{ padding: 0, marginBottom: 16 }}>
-        返回列表
-      </Button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} style={{ padding: 0 }}>
+          返回列表
+        </Button>
+        <Button
+          className="lp2-green-button"
+          onClick={() => {
+            useTutorStore.getState().startFocused({
+              label: `作业「${hw.title}」`,
+              courseId,
+              itemTitle: hw.title,
+              itemExcerpt: String(hw.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200),
+            })
+            navigate('/tutor')
+          }}
+        >
+          问甘蔗这道题
+        </Button>
+      </div>
 
       <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0', padding: 24 }}>
         {/* Header */}

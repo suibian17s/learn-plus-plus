@@ -32,18 +32,22 @@ export default function AllTasksPage() {
     let cancelled = false
     ;(async () => {
       setLoading(true)
+      // 复用主进程 dashboard 快照（缓存命中毫秒级），不再逐课串行拉取
       const all: any[] = []
-      for (const c of courses) {
-        try {
-          const hws = await window.learn.hw.list(c.id)
-          for (const hw of hws) {
-            if (hw.status === '已提交' || hw.status === '已批阅') continue
-            const deadline = classifyDeadline(hw.deadline)
-            if (!deadline) continue
-            all.push({ ...deadline, courseName: c.name, courseId: c.id, title: hw.title, targetTab: 'homework' })
-          }
-        } catch { /* ignore */ }
-      }
+      try {
+        const snapshot: any = await window.learn.stats.refreshDashboard({ courses })
+        for (const item of snapshot?.todayFocus || []) {
+          const deadline = classifyDeadline(item.deadline || '')
+          if (!deadline) continue
+          all.push({
+            ...deadline,
+            courseName: item.courseName,
+            courseId: item.courseId,
+            title: item.title,
+            targetTab: item.targetTab || 'homework',
+          })
+        }
+      } catch { /* ignore */ }
       all.sort((a, b) => {
         const order = { P0: 0, P1: 1, P2: 2 } as Record<string, number>
         const byPriority = (order[a.priority] || 3) - (order[b.priority] || 3)
